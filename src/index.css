@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🎨 Custom palette */
+:root {
+  --color-bg: #fdfbf7;
+  --color-text: #264653;
+  --color-accent: #2a9d8f;
+  --color-highlight: #e9c46a;
+  --color-warn: #f4a261;
+  --color-danger: #e76f51;
+}
+
+body {
+  @apply bg-[var(--color-bg)] text-[var(--color-text)] font-sans;
+}
