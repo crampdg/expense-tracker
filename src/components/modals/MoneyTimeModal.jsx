@@ -28,9 +28,14 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
   }
 
   const handleSave = () => {
-    onSave(form)
+    const cleanForm = {
+      ...form,
+      amount: Number(form.amount) || 0,   // ensure numeric
+    }
+    onSave(cleanForm)
     onClose()
   }
+
 
   return (
     <Modal open={open} onClose={onClose}>

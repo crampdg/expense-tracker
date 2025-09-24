@@ -48,7 +48,9 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       {/* Cash on Hand */}
       <div className="text-center">
         <h2 className="text-xl font-semibold text-gray-600">Cash on Hand</h2>
-        <p className="text-4xl font-bold mt-2">${cashOnHand.toFixed(2)}</p>
+        <p className="text-4xl font-bold mt-2">
+          ${isNaN(cashOnHand) ? "0.00" : cashOnHand.toFixed(2)}
+        </p>
       </div>
 
       {/* Suggested Daily Spend */}
@@ -57,9 +59,10 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           Suggested Daily Spend
         </h3>
         <p className="text-2xl text-green-600 font-bold">
-          ${suggestedDaily.toFixed(2)}
+          ${isNaN(suggestedDaily) ? "0.00" : suggestedDaily.toFixed(2)}
         </p>
       </div>
+
 
       {/* Money Time Button */}
       <button
