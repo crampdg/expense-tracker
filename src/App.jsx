@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import WalletTab from './components/WalletTab.jsx'
 import BudgetTab from './components/BudgetTab.jsx'
 import DetailedTab from './components/DetailedTab.jsx'
@@ -16,6 +16,8 @@ function App() {
   const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
   const [showTransactionEditModal, setShowTransactionEditModal] = useState(false)
   const [transactions, setTransactions] = useState([])
+
+  // Budget state now has inflows & outflows
   const [budget, setBudget] = useState({ inflows: [], outflows: [] })
   const [period, setPeriod] = useState({ type: 'Monthly', day: 1 })
   const [periodEnd, setPeriodEnd] = useState(new Date())
@@ -23,16 +25,16 @@ function App() {
   const [selectedTransaction, setSelectedTransaction] = useState(null)
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState(null)
 
-  // ✅ Memoized once, no duplicate inside suggestedSpend
   const today = useMemo(() => new Date(), [])
 
-  // Suggested spend calculation (simplified to avoid duplicate today/useMemo)
+  // Suggested spend: based on total outflows budget
   const suggestedSpend = useMemo(() => {
-    if (budget.length === 0) return 0
-    const totalBudget = budget.reduce((acc, b) => acc + (parseFloat(b.amount) || 0), 0)
+    const totalBudget =
+      budget.outflows.reduce((acc, b) => acc + (parseFloat(b.amount) || 0), 0)
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-    const daysInMonth = (endOfMonth - startOfMonth) / (1000 * 60 * 60 * 24) + 1
+    const daysInMonth =
+      (endOfMonth - startOfMonth) / (1000 * 60 * 60 * 24) + 1
     return totalBudget / daysInMonth
   }, [budget, today])
 
@@ -51,24 +53,31 @@ function App() {
     setTransactions(transactions.filter(t => t.id !== id))
   }
 
-  const handleAddBudget = (category) => {
-    setBudget([...budget, category])
+  const handleAddBudget = (section, category) => {
+    setBudget(prev => ({
+      ...prev,
+      [section]: [...prev[section], category]
+    }))
   }
 
-  const handleEditBudget = (updatedCategory) => {
-    setBudget(budget.map(b =>
-      b.id === updatedCategory.id ? updatedCategory : b
-    ))
+  const handleEditBudget = (section, index, updatedCategory) => {
+    setBudget(prev => {
+      const updated = [...prev[section]]
+      updated[index] = updatedCategory
+      return { ...prev, [section]: updated }
+    })
   }
 
-  const handleDeleteBudget = (id) => {
-    setBudget(budget.filter(b => b.id !== id))
+  const handleDeleteBudget = (section, index) => {
+    setBudget(prev => {
+      const updated = prev[section].filter((_, i) => i !== index)
+      return { ...prev, [section]: updated }
+    })
   }
 
   const handleClaimBudget = (section, index, payload) => {
     console.log("Claiming budget row:", section, index, payload)
   }
-
 
   return (
     <div className="flex flex-col h-screen">
@@ -85,14 +94,12 @@ function App() {
             period={period}
             setPeriod={setPeriod}
             periodEnd={periodEnd}
-            budgets={budget}           // ✅ rename matches BudgetTab.jsx
+            budgets={budget}
             setBudgets={setBudget}
             onClaim={handleClaimBudget}
             transactions={transactions}
           />
         )}
-
-
         {activeTab === 'detailed' && (
           <DetailedTab transactions={transactions} budget={budget} />
         )}
@@ -101,11 +108,7 @@ function App() {
         )}
       </div>
 
-      {/* ✅ New Bottom Navigation */}
-      <BottomNav
-        active={activeTab}
-        setActive={setActiveTab}
-      />
+      <BottomNav active={activeTab} setActive={setActiveTab} />
 
       {/* Modals */}
       {showSpendModal && (
@@ -123,7 +126,7 @@ function App() {
       {showBudgetEditModal && (
         <BudgetEditModal
           onClose={() => setShowBudgetEditModal(false)}
-          onSave={handleAddBudget}
+          onSave={(form) => handleAddBudget('outflows', form)}
         />
       )}
       {selectedTransaction && (
@@ -137,7 +140,9 @@ function App() {
         <BudgetEditModal
           category={selectedBudgetCategory}
           onClose={() => setSelectedBudgetCategory(null)}
-          onSave={handleEditBudget}
+          onSave={(form) =>
+            handleEditBudget('outflows', selectedBudgetCategory.index, form)
+          }
         />
       )}
     </div>

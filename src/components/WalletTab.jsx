@@ -4,30 +4,37 @@ import MoneyTimeModal from "./modals/MoneyTimeModal";
 export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [showMoneyTime, setShowMoneyTime] = useState(false);
 
-  // ✅ Calculate cash on hand (inflows - outflows)
-  const cashOnHand = useMemo(() => {
-    if (!budget) return 0;
-    const inflows = budget.inflows || 0;
-    const outflows = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-    return inflows - outflows;
-  }, [budget, transactions]);
+  // ✅ Calculate totals from budget
+  const totalInflows = useMemo(
+    () => (budget?.inflows || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0),
+    [budget]
+  );
+  const totalOutflowsBudget = useMemo(
+    () => (budget?.outflows || []).reduce((sum, o) => sum + (Number(o.amount) || 0), 0),
+    [budget]
+  );
 
-  // ✅ Calculate suggested daily spend
+  // ✅ Calculate actual spending from transactions
+  const actualOutflows = useMemo(
+    () => transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
+    [transactions]
+  );
+
+  // ✅ Cash on hand = total inflows – actual outflows
+  const cashOnHand = totalInflows - actualOutflows;
+
+  // ✅ Suggested daily spend = (remaining outflow budget) / (days left)
   const suggestedDaily = useMemo(() => {
-    if (!budget || !budget.periodDays) return 0;
-
-    const inflows = budget.inflows || 0;
-    const outflows = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
-    const remaining = inflows - outflows;
     const today = new Date();
-    const end = new Date(budget.periodEnd);
+    const end = new Date(budget?.periodEnd || new Date(today.getFullYear(), today.getMonth() + 1, 0));
     const daysLeft = Math.max(
       1,
       Math.ceil((end - today) / (1000 * 60 * 60 * 24))
     );
 
+    const remaining = totalOutflowsBudget - actualOutflows;
     return remaining / daysLeft;
-  }, [budget, transactions]);
+  }, [budget, totalOutflowsBudget, actualOutflows]);
 
   // ✅ Show the 3 most recent transactions
   const recentTransactions = useMemo(() => {
@@ -59,7 +66,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         onClick={() => setShowMoneyTime(true)}
         className="bg-yellow-400 text-black font-bold text-lg px-6 py-3 rounded-full shadow-lg hover:bg-yellow-300 transition"
       >
-        💸 MONEY TIME!
+        MONEY TIME! 💸
       </button>
 
       {/* Recent Transactions */}
