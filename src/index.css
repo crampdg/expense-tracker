@@ -2,16 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 🎨 Custom palette */
-:root {
-  --color-bg: #fdfbf7;
-  --color-text: #264653;
-  --color-accent: #2a9d8f;
-  --color-highlight: #e9c46a;
-  --color-warn: #f4a261;
-  --color-danger: #e76f51;
-}
 
-body {
-  @apply bg-[var(--color-bg)] text-[var(--color-text)] font-sans;
-}
+/* Small helpers */
+.table-head { @apply bg-gray-200 text-xs md:text-sm; }
+.th, .td { @apply border border-gray-300 p-2; }
+.label { @apply text-sm text-gray-600; }
+.input { @apply border rounded p-2 text-sm w-full; }
+.select { @apply border rounded p-2 text-sm; }
+.btn { @apply rounded-xl px-3 py-2 text-sm font-medium shadow; }
+.btn-primary { @apply bg-black text-white hover:bg-gray-800; }
+.btn-ghost { @apply bg-white text-gray-800 border hover:bg-gray-50; }
+.card { @apply bg-white rounded-2xl shadow p-4 md:p-6; }
