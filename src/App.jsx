@@ -1,5 +1,5 @@
+import BottomNav from './components/ui/BottomNav.jsx'
 import { useState, useMemo, useEffect } from 'react'
-import Sidebar from './components/Sidebar.jsx'
 import WalletTab from './components/WalletTab.jsx'
 import BudgetTab from './components/BudgetTab.jsx'
 import SummaryTab from './components/SummaryTab.jsx'
@@ -214,7 +214,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex">
-      <Sidebar active={active} setActive={setActive} />
+      <BottomNav active={active} setActive={setActive} />
+
       <main className="flex-1 p-3 md:p-6 grid gap-4 md:gap-6">
         {active === 'wallet' && (
         <WalletTab
