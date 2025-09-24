@@ -8,6 +8,8 @@ import MoneyTimeModal from './components/modals/MoneyTimeModal.jsx'
 import BudgetEditModal from './components/modals/BudgetEditModal.jsx'
 import TransactionEditModal from './components/modals/TransactionEditModal.jsx'
 import BottomNav from './components/ui/BottomNav.jsx'
+import { useState, useMemo, useEffect } from 'react'
+
 
 function App() {
   const [activeTab, setActiveTab] = useState('wallet')
@@ -15,17 +17,51 @@ function App() {
   const [showMoneyTimeModal, setShowMoneyTimeModal] = useState(false)
   const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
   const [showTransactionEditModal, setShowTransactionEditModal] = useState(false)
-  const [transactions, setTransactions] = useState([])
 
-  // Budget state now has inflows & outflows
-  const [budget, setBudget] = useState({ inflows: [], outflows: [] })
-  const [period, setPeriod] = useState({ type: 'Monthly', day: 1 })
-  const [periodEnd, setPeriodEnd] = useState(new Date())
+  const [transactions, setTransactions] = useState(() => {
+    const saved = localStorage.getItem("transactions")
+    return saved ? JSON.parse(saved) : []
+  })
+
+  const [budget, setBudget] = useState(() => {
+    const saved = localStorage.getItem("budget")
+    return saved ? JSON.parse(saved) : { inflows: [], outflows: [] }
+  })
+
+  const [period, setPeriod] = useState(() => {
+    const saved = localStorage.getItem("period")
+    return saved ? JSON.parse(saved) : { type: 'Monthly', day: 1 }
+  })
+
+  const [periodEnd, setPeriodEnd] = useState(() => {
+    const saved = localStorage.getItem("periodEnd")
+    return saved ? new Date(saved) : new Date()
+  })
+
 
   const [selectedTransaction, setSelectedTransaction] = useState(null)
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState(null)
 
   const today = useMemo(() => new Date(), [])
+
+
+  useEffect(() => {
+    localStorage.setItem("transactions", JSON.stringify(transactions))
+  }, [transactions])
+
+  useEffect(() => {
+    localStorage.setItem("budget", JSON.stringify(budget))
+  }, [budget])
+
+  useEffect(() => {
+    localStorage.setItem("period", JSON.stringify(period))
+  }, [period])
+
+  useEffect(() => {
+    localStorage.setItem("periodEnd", periodEnd.toISOString())
+  }, [periodEnd])
+
+
 
   // Suggested spend: divide *remaining* outflow budget across days in month
   const suggestedSpend = useMemo(() => {
