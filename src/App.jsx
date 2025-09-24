@@ -90,8 +90,8 @@ function App() {
 
       {/* ✅ New Bottom Navigation */}
       <BottomNav
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        active={activeTab}
+        setActive={setActiveTab}
       />
 
       {/* Modals */}

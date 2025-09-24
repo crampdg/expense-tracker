@@ -4,7 +4,6 @@ export default function Button({ className = '', variant = 'primary', onClick, .
   // Unified handler for both click & touch
   const handlePress = (e) => {
     if (onClick) {
-      e.preventDefault() // avoid double-firing
       onClick(e)
     }
   }
