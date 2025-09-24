@@ -93,9 +93,14 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                 className="flex justify-between bg-gray-100 rounded-lg p-2 shadow-sm"
               >
                 <span className="text-sm">{t.category || "Uncategorized"}</span>
-                <span className="text-sm font-medium">
-                  -${(t.amount || 0).toFixed(2)}
+                <span
+                  className={`text-sm font-medium ${
+                    t.type === "expense" ? "text-red-600" : "text-green-600"
+                  }`}
+                >
+                  {t.type === "expense" ? "-" : "+"}${(Number(t.amount) || 0).toFixed(2)}
                 </span>
+
               </li>
             ))}
           </ul>
