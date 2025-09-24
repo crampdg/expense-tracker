@@ -1,57 +1,43 @@
-import { useState } from 'react'
-import Card from './ui/Card.jsx'
-import Button from './ui/Button.jsx'
-import MoneyTimeModal from './modals/MoneyTimeModal.jsx'
-import { money } from '../utils/format.js'
+import { useMemo } from "react"
 
-export default function WalletTab({ balance, suggestedSpend, transactions, onMoneyTime, budgets }) {
+export default function WalletTab({ transactions }) {
+  // Default to [] if transactions is missing
+  const txns = transactions || []
 
-  const [open, setOpen] = useState(false)
-  const isEmpty = balance === 0 && (!transactions || transactions.length === 0)
+  // Compute total inflows, outflows, and balance
+  const { inflows, outflows, balance } = useMemo(() => {
+    let inflows = 0
+    let outflows = 0
+
+    txns.forEach((t) => {
+      if (t.amount > 0) inflows += t.amount
+      else outflows += Math.abs(t.amount)
+    })
+
+    return {
+      inflows,
+      outflows,
+      balance: inflows - outflows,
+    }
+  }, [txns])
 
   return (
-    <Card>
-      <h2 className="text-center font-bold mb-4">Wallet</h2>
-
-      {isEmpty ? (
-        <div className="text-center text-gray-600 space-y-3 mb-8">
-          <p className="text-lg">💡 Getting Started</p>
-          <p className="text-sm">
-            Add or <span className="font-semibold">Claim</span> your first inflow to start tracking cash on hand.
-          </p>
+    <div className="card">
+      <h2 className="text-lg font-bold mb-4">Wallet Summary</h2>
+      <div className="space-y-2">
+        <div className="flex justify-between">
+          <span>Total Inflows:</span>
+          <span>${inflows.toFixed(2)}</span>
         </div>
-      ) : (
-        <>
-          <div className="text-center mb-6">
-            <p className="text-gray-600">Cash on Hand</p>
-            <p className={`text-3xl font-bold ${balance < 0 ? 'text-red-600' : ''}`}>
-              {money(balance)}
-            </p>
-          </div>
-          <div className="text-center mb-8">
-            <p className="text-gray-600">Suggested Daily Spend</p>
-            <p className="text-xl font-semibold">{money(suggestedSpend)}</p>
-          </div>
-        </>
-      )}
-
-      {/* Button always at bottom */}
-      <div className="flex justify-center">
-        <Button onClick={() => setOpen(true)}>MONEY TIME! 💸</Button>
+        <div className="flex justify-between">
+          <span>Total Outflows:</span>
+          <span>${outflows.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between font-bold">
+          <span>Balance:</span>
+          <span>${balance.toFixed(2)}</span>
+        </div>
       </div>
-
-      <MoneyTimeModal
-        open={open}
-        onClose={() => setOpen(false)}
-        onSave={onMoneyTime}
-        categories={[
-            ...new Set([
-            ...budgets.inflows.map(i => i.category),
-            ...budgets.outflows.map(o => o.category),
-            ]),
-        ]}
-        />
-
-    </Card>
+    </div>
   )
 }
