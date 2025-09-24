@@ -59,7 +59,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         onClick={() => setShowMoneyTime(true)}
         className="bg-yellow-400 text-black font-bold text-lg px-6 py-3 rounded-full shadow-lg hover:bg-yellow-300 transition"
       >
-        💸 MONEY TIME!
+        MONEY TIME! 💸
       </button>
 
       {/* Recent Transactions */}

@@ -16,7 +16,10 @@ function App() {
   const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
   const [showTransactionEditModal, setShowTransactionEditModal] = useState(false)
   const [transactions, setTransactions] = useState([])
-  const [budget, setBudget] = useState([])
+  const [budget, setBudget] = useState({ inflows: [], outflows: [] })
+  const [period, setPeriod] = useState({ type: 'Monthly', day: 1 })
+  const [periodEnd, setPeriodEnd] = useState(new Date())
+
   const [selectedTransaction, setSelectedTransaction] = useState(null)
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState(null)
 
@@ -62,6 +65,11 @@ function App() {
     setBudget(budget.filter(b => b.id !== id))
   }
 
+  const handleClaimBudget = (section, index, payload) => {
+    console.log("Claiming budget row:", section, index, payload)
+  }
+
+
   return (
     <div className="flex flex-col h-screen">
       <div className="flex-1 overflow-y-auto p-4">
@@ -74,12 +82,17 @@ function App() {
         )}
         {activeTab === 'budget' && (
           <BudgetTab
-            budget={budget}
-            onAdd={() => setShowBudgetEditModal(true)}
-            onEdit={setSelectedBudgetCategory}
-            onDelete={handleDeleteBudget}
+            period={period}
+            setPeriod={setPeriod}
+            periodEnd={periodEnd}
+            budgets={budget}           // ✅ rename matches BudgetTab.jsx
+            setBudgets={setBudget}
+            onClaim={handleClaimBudget}
+            transactions={transactions}
           />
         )}
+
+
         {activeTab === 'detailed' && (
           <DetailedTab transactions={transactions} budget={budget} />
         )}
