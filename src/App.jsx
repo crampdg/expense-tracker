@@ -67,10 +67,9 @@ function App() {
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'wallet' && (
           <WalletTab
+            budget={budget}
             transactions={transactions}
-            onAdd={() => setShowSpendModal(true)}
-            onEdit={setSelectedTransaction}
-            onDelete={handleDeleteTransaction}
+            onAddTransaction={handleAddTransaction}
           />
         )}
         {activeTab === 'budget' && (
@@ -93,7 +92,6 @@ function App() {
       <BottomNav
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onWalletClick={() => setShowMoneyTimeModal(true)}
       />
 
       {/* Modals */}
