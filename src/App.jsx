@@ -27,21 +27,44 @@ function App() {
 
   const today = useMemo(() => new Date(), [])
 
-  // Suggested spend: based on total outflows budget
+  // Suggested spend: divide *remaining* outflow budget across days in month
   const suggestedSpend = useMemo(() => {
     const totalBudget =
-      budget.outflows.reduce((acc, b) => acc + (parseFloat(b.amount) || 0), 0)
+      (budget?.outflows || []).reduce((acc, b) => acc + (parseFloat(b.amount) || 0), 0)
+
+    if (totalBudget === 0) return 0
+
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     const daysInMonth =
       (endOfMonth - startOfMonth) / (1000 * 60 * 60 * 24) + 1
+
     return totalBudget / daysInMonth
-  }, [budget, today])
+  }, [budget?.outflows, today])
+
 
   // Handlers
   const handleAddTransaction = (transaction) => {
     setTransactions([...transactions, transaction])
+
+    // Auto-add category into budget if missing
+    if (transaction.type === 'inflow') {
+      if (!budget.inflows.some(i => i.category === transaction.category)) {
+        setBudget(prev => ({
+          ...prev,
+          inflows: [...prev.inflows, { category: transaction.category, amount: 0 }]
+        }))
+      }
+    } else if (transaction.type === 'expense') {
+      if (!budget.outflows.some(o => o.category === transaction.category)) {
+        setBudget(prev => ({
+          ...prev,
+          outflows: [...prev.outflows, { category: transaction.category, amount: 0 }]
+        }))
+      }
+    }
   }
+
 
   const handleEditTransaction = (updatedTransaction) => {
     setTransactions(transactions.map(t =>
