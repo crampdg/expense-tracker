@@ -20,10 +20,18 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     [transactions]
   );
 
-  // ✅ Cash on hand = total inflows – actual outflows
-  const cashOnHand = totalInflows - actualOutflows;
+  // ✅ Correct Cash on Hand calculation from transactions
+  const cashOnHand = useMemo(() => {
+    return transactions.reduce((sum, t) => {
+      const amt = Number(t.amount) || 0;
+      if (t.type === "inflow") return sum + amt;
+      if (t.type === "expense") return sum - amt;
+      return sum;
+    }, 0);
+  }, [transactions]);
 
-  // ✅ Suggested daily spend = (remaining outflow budget) / (days left)
+
+  // ✅ Suggested Daily Spend = remaining cashOnHand / days left in period
   const suggestedDaily = useMemo(() => {
     const today = new Date();
     const end = new Date(budget?.periodEnd || new Date(today.getFullYear(), today.getMonth() + 1, 0));
@@ -32,9 +40,9 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       Math.ceil((end - today) / (1000 * 60 * 60 * 24))
     );
 
-    const remaining = totalOutflowsBudget - actualOutflows;
-    return remaining / daysLeft;
-  }, [budget, totalOutflowsBudget, actualOutflows]);
+    return cashOnHand / daysLeft;
+  }, [budget?.periodEnd, cashOnHand]);
+
 
   // ✅ Show the 3 most recent transactions
   const recentTransactions = useMemo(() => {
