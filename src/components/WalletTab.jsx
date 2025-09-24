@@ -96,11 +96,16 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       {/* Modal */}
       {showMoneyTime && (
         <MoneyTimeModal
-          budget={budget}
+          open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
-          onAddTransaction={onAddTransaction}
+          onSave={onAddTransaction}          // ✅ match expected prop
+          categories={[
+            ...budget.inflows.map(i => i.category),
+            ...budget.outflows.map(o => o.category),
+          ]}
         />
       )}
+
     </div>
   );
 }
