@@ -1,4 +1,4 @@
-import { rollForward, rollBackward, calcPeriodEnd } from "../utils/periodUtils"
+import { calcPeriodEnd, getAnchoredPeriodStart } from "../utils/periodUtils"
 import Card from './ui/Card.jsx'
 import Button from './ui/Button.jsx'
 import BudgetEditModal from './modals/BudgetEditModal.jsx'
@@ -15,9 +15,6 @@ export default function BudgetTab({
   const [editing, setEditing] = useState(null) // {section, index, isNew}
   const [history, setHistory] = useState([])   // stack of prior budgets for Undo
 
-  const setPeriodType = (type) => setPeriod(p => ({ ...p, type }))
-  const setDay = (day) => setPeriod(p => ({ ...p, day: Number(day) || 1 }))
-
   const pushHistory = () => setHistory(h => [...h, JSON.parse(JSON.stringify(budgets))])
   const undo = () => {
     setHistory(h => {
@@ -32,18 +29,18 @@ export default function BudgetTab({
 
   // --- Period range (start/end) for “Actuals” ---
   const offsetStart = useMemo(() => {
-    let start = new Date(period.anchorDate) // anchor from config
-    if (periodOffset > 0) {
-      for (let i = 0; i < periodOffset; i++) start = rollForward(period.type, start)
-    } else if (periodOffset < 0) {
-      for (let i = 0; i < Math.abs(periodOffset); i++) start = rollBackward(period.type, start)
-    }
-    return start
-  }, [periodOffset, period])
+    return getAnchoredPeriodStart(
+      period.type,
+      period.anchorDate,
+      new Date(),    // figure out the “current” period
+      periodOffset
+    )
+  }, [period.type, period.anchorDate, periodOffset])
 
   const offsetEnd = useMemo(() => {
     return calcPeriodEnd(period.type, offsetStart)
   }, [period.type, offsetStart])
+
 
 
   const startISO = offsetStart.toISOString().slice(0, 10)
@@ -130,36 +127,51 @@ export default function BudgetTab({
         <div className="flex justify-between items-center mb-2">
           <button
             className="px-2 py-1 bg-gray-200 rounded"
-            onClick={() => setPeriodOffset(prev => prev - 1)}
+            onClick={() => setPeriodOffset(o => o - 1)}
           >
             ← Previous
           </button>
+
           <p>
             Period: {offsetStart.toDateString()} – {offsetEnd.toDateString()}
           </p>
 
           <button
             className="px-2 py-1 bg-gray-200 rounded"
-            onClick={() => setPeriodOffset(prev => prev + 1)}
+            onClick={() => setPeriodOffset(o => o + 1)}
           >
             Next →
           </button>
+
+          <button
+            className="ml-2 px-2 py-1 bg-gray-200 rounded"
+            onClick={() => setPeriodOffset(0)}
+          >
+            Reset
+          </button>
+
         </div>
 
         <div className="flex justify-center gap-2 mb-6">
-          <select value={period.type} onChange={e => setPeriodType(e.target.value)} className="select">
+          <select
+            value={period.type}
+            onChange={e => setPeriod(p => ({ ...p, type: e.target.value }))}
+            className="select"
+          >
             <option>Monthly</option>
             <option>Biweekly</option>
+            <option>Weekly</option>
+            <option>SemiMonthly</option>
             <option>Annually</option>
           </select>
-          {period.type === 'Monthly' && (
-            <input
-              type="number" min="1" max="28"
-              value={period.day}
-              onChange={e => setDay(e.target.value)}
-              className="input w-20"
-            />
-          )}
+
+          <input
+            type="date"
+            value={period.anchorDate}
+            onChange={e => setPeriod(p => ({ ...p, anchorDate: e.target.value }))}
+            className="input"
+          />
+
         </div>
 
         {/* Inflows */}

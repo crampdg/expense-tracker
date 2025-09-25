@@ -1,4 +1,4 @@
-import { rollForward, rollBackward, calcPeriodEnd } from "./utils/periodUtils"
+import { calcPeriodEnd, getAnchoredPeriodStart } from "./utils/periodUtils"
 import PeriodSettings from "./components/PeriodSettings"
 import WalletTab from './components/WalletTab.jsx'
 import BudgetTab from './components/BudgetTab.jsx'
@@ -10,7 +10,6 @@ import BudgetEditModal from './components/modals/BudgetEditModal.jsx'
 import TransactionEditModal from './components/modals/TransactionEditModal.jsx'
 import BottomNav from './components/ui/BottomNav.jsx'
 import { useState, useMemo, useEffect } from 'react'
-
 
 
 function App() {
@@ -55,11 +54,20 @@ function App() {
       return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
     }
   })
+ 
+  const periodStart = useMemo(() => {
+    return getAnchoredPeriodStart(
+      periodConfig.type,
+      periodConfig.anchorDate,
+      new Date(),    // this determines which anchored period is “current”
+      periodOffset
+    )
+  }, [periodConfig, periodOffset])
 
-  const [periodStart, setPeriodStart] = useState(new Date(periodConfig.anchorDate))
-  const [periodEnd, setPeriodEnd] = useState(calcPeriodEnd(periodConfig.type, new Date(periodConfig.anchorDate)))
+  const periodEnd = useMemo(() => {
+    return calcPeriodEnd(periodConfig.type, periodStart)
+  }, [periodConfig.type, periodStart])
 
-  
 
   const [selectedTransaction, setSelectedTransaction] = useState(null)
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState(null)
@@ -80,16 +88,6 @@ function App() {
     localStorage.setItem("periodConfig", JSON.stringify(periodConfig))
   }, [periodConfig])
 
-  // auto-roll forward when today passes the end
-  useEffect(() => {
-    const today = new Date()
-    if (today > periodEnd) {
-      const newStart = rollForward(periodConfig.type, periodStart)
-      const newEnd = calcPeriodEnd(periodConfig.type, newStart)
-      setPeriodStart(newStart)
-      setPeriodEnd(newEnd)
-    }
-  }, [periodConfig, periodEnd, periodStart])
 
 
 
