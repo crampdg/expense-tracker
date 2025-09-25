@@ -98,7 +98,7 @@ export default function DetailedTab({ transactions, editTransaction, deleteTrans
       <TransactionEditModal
         open={open}
         onClose={() => setOpen(false)}
-        tx={selected}
+        transaction={selected}
         onSave={(updated) => { editTransaction(selected.id, updated); setOpen(false) }}
         onDelete={() => { deleteTransaction(selected.id); setOpen(false) }}
       />

@@ -159,8 +159,14 @@ function App() {
           />
         )}
         {activeTab === 'detailed' && (
-          <DetailedTab transactions={transactions} budget={budget} />
+          <DetailedTab
+            transactions={transactions}
+            budget={budget}
+            editTransaction={handleEditTransaction}     // ✅ pass edit handler
+            deleteTransaction={handleDeleteTransaction} // ✅ pass delete handler
+          />
         )}
+
         {activeTab === 'summary' && (
           <SummaryTab transactions={transactions} budget={budget} />
         )}
