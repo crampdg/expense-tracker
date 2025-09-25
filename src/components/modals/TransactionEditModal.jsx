@@ -3,9 +3,9 @@ import Button from '../ui/Button.jsx'
 import { useEffect, useState } from 'react'
 
 
-export default function TransactionEditModal({ open, onClose, tx, onSave, onDelete }){
+export default function TransactionEditModal({ open, onClose, transaction, onSave, onDelete }){
 const [form, setForm] = useState(null)
-useEffect(()=>{ setForm(tx? {...tx} : null) }, [tx])
+useEffect(()=>{ setForm(transaction? {...transaction} : null) }, [transaction])
 if(!form) return <Modal open={open} onClose={onClose}></Modal>
 return (
 <Modal open={open} onClose={onClose}>
