@@ -99,9 +99,16 @@ export default function DetailedTab({ transactions, editTransaction, deleteTrans
         open={open}
         onClose={() => setOpen(false)}
         transaction={selected}
-        onSave={(updated) => { editTransaction(selected.id, updated); setOpen(false) }}
-        onDelete={() => { deleteTransaction(selected.id); setOpen(false) }}
+        onSave={(updated) => {
+          editTransaction({ ...updated, id: selected.id })  // ✅ match App.jsx signature
+          setOpen(false)
+        }}
+        onDelete={() => {
+          deleteTransaction(selected.id)  // ✅ still correct
+          setOpen(false)
+        }}
       />
+
     </>
   )
 }
