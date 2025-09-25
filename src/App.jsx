@@ -185,8 +185,8 @@ function App() {
         )}
         {activeTab === 'budget' && (
           <BudgetTab
-            periodConfig={periodConfig}
-            setPeriodConfig={setPeriodConfig}
+            period={periodConfig}
+            setPeriod={setPeriodConfig}
             budgets={budget}
             setBudgets={setBudget}
             onClaim={handleClaimBudget}
@@ -194,6 +194,7 @@ function App() {
             periodOffset={periodOffset}
             setPeriodOffset={setPeriodOffset}
           />
+
         )}
         {activeTab === 'detailed' && (
           <DetailedTab
