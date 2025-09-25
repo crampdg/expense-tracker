@@ -146,8 +146,10 @@ export default function BudgetTab({
         </div>
 
         <p>
-          Current Period: {periodStart.toDateString()} – {periodEnd.toDateString()}
+          Period: {offsetStart.toDateString()} – {offsetEnd.toDateString()}
         </p>
+
+
 
         <div className="flex justify-center gap-2 mb-6">
           <select value={period.type} onChange={e => setPeriodType(e.target.value)} className="select">

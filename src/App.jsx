@@ -1,3 +1,4 @@
+import PeriodSettings from "./components/PeriodSettings"
 import WalletTab from './components/WalletTab.jsx'
 import BudgetTab from './components/BudgetTab.jsx'
 import DetailedTab from './components/DetailedTab.jsx'
@@ -233,9 +234,8 @@ function App() {
         )}
         {activeTab === 'budget' && (
           <BudgetTab
-            period={period}
-            setPeriod={setPeriod}
-            periodEnd={periodEnd}
+            periodConfig={periodConfig}
+            setPeriodConfig={setPeriodConfig}
             budgets={budget}
             setBudgets={setBudget}
             onClaim={handleClaimBudget}
