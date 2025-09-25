@@ -30,21 +30,23 @@ export default function BudgetTab({
   const addRow = (section) => setEditing({ section, index: budgets[section].length, isNew: true })
 
   // --- Period range (start/end) for “Actuals” ---
-  const startOfPeriod = useMemo(() => {
-    const end = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate())
-    if (period.type === 'Monthly') {
-      const prevEnd = new Date(end.getFullYear(), end.getMonth() - 1, end.getDate())
-      return new Date(prevEnd.getTime() + 24 * 60 * 60 * 1000) // day after prev end
+  const offsetStart = useMemo(() => {
+    let start = new Date(period.anchorDate) // anchor from config
+    if (periodOffset > 0) {
+      for (let i = 0; i < periodOffset; i++) start = rollForward(period.type, start)
+    } else if (periodOffset < 0) {
+      for (let i = 0; i < Math.abs(periodOffset); i++) start = rollBackward(period.type, start)
     }
-    if (period.type === 'Biweekly') {
-      return new Date(end.getTime() - 14 * 24 * 60 * 60 * 1000)
-    }
-    // Annually
-    return new Date(end.getFullYear(), 0, 1)
-  }, [period.type, periodEnd])
+    return start
+  }, [periodOffset, period])
 
-  const startISO = useMemo(() => startOfPeriod.toISOString().slice(0, 10), [startOfPeriod])
-  const endISO   = useMemo(() => periodEnd.toISOString().slice(0, 10), [periodEnd])
+  const offsetEnd = useMemo(() => {
+    return calcPeriodEnd(period.type, offsetStart)
+  }, [period.type, offsetStart])
+
+
+  const startISO = offsetStart.toISOString().slice(0, 10)
+  const endISO   = offsetEnd.toISOString().slice(0, 10)
 
   // --- Actuals in current period ---
   const inflowActuals = useMemo(() => {
@@ -123,7 +125,7 @@ export default function BudgetTab({
           <h2 className="text-center font-bold">Budget</h2>
           <Button variant="ghost" onClick={undo} disabled={!history.length}>Undo</Button>
         </div>
-        
+
         <div className="flex justify-between items-center mb-2">
           <button
             className="px-2 py-1 bg-gray-200 rounded"
@@ -132,8 +134,9 @@ export default function BudgetTab({
             ← Previous
           </button>
           <p>
-            Period: {periodStart.toDateString()} – {periodEnd.toDateString()}
+            Period: {offsetStart.toDateString()} – {offsetEnd.toDateString()}
           </p>
+
           <button
             className="px-2 py-1 bg-gray-200 rounded"
             onClick={() => setPeriodOffset(prev => prev + 1)}
