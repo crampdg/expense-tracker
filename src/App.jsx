@@ -21,27 +21,25 @@ function App() {
   const [showTransactionEditModal, setShowTransactionEditModal] = useState(false)
   const [periodOffset, setPeriodOffset] = useState(0)
 
-  const displayedStart = (() => {
-    let start = new Date(periodConfig.anchorDate)
-    if (periodOffset > 0) {
-      for (let i = 0; i < periodOffset; i++) start = rollForward(periodConfig.type, start)
-    } else if (periodOffset < 0) {
-      for (let i = 0; i < Math.abs(periodOffset); i++) start = rollBackward(periodConfig.type, start)
-    }
-    return start
-  })()
-
-  const displayedEnd = calcPeriodEnd(periodConfig.type, displayedStart)
-
   
   const [transactions, setTransactions] = useState(() => {
-    const saved = localStorage.getItem("transactions")
-    return saved ? JSON.parse(saved) : []
+    try {
+      const saved = localStorage.getItem("transactions")
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      localStorage.removeItem("transactions")
+      return []
+    }
   })
 
   const [budget, setBudget] = useState(() => {
-    const saved = localStorage.getItem("budget")
-    return saved ? JSON.parse(saved) : { inflows: [], outflows: [] }
+    try {
+      const saved = localStorage.getItem("budget")
+      return saved ? JSON.parse(saved) : { inflows: [], outflows: [] }
+    } catch {
+      localStorage.removeItem("budget")
+      return { inflows: [], outflows: [] }
+    }
   })
 
   // Replace these old states:
@@ -49,8 +47,13 @@ function App() {
   // const [periodEnd, setPeriodEnd] = useState(...)
 
   const [periodConfig, setPeriodConfig] = useState(() => {
-    const saved = localStorage.getItem("periodConfig")
-    return saved ? JSON.parse(saved) : { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
+    try {
+      const saved = localStorage.getItem("periodConfig")
+      return saved ? JSON.parse(saved) : { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
+    } catch {
+      localStorage.removeItem("periodConfig")
+      return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
+    }
   })
 
   const [periodStart, setPeriodStart] = useState(new Date(periodConfig.anchorDate))
@@ -86,7 +89,7 @@ function App() {
       setPeriodStart(newStart)
       setPeriodEnd(newEnd)
     }
-  }, [periodConfig, periodEnd])
+  }, [periodConfig, periodEnd, periodStart])
 
 
 
