@@ -244,6 +244,17 @@ function App() {
           }}
         />
       )}
+      {showBudgetEditModal && (
+        <BudgetEditModal
+          open={true}
+          isNew={true}
+          item={{ category: '', amount: '' }}
+          onClose={() => setShowBudgetEditModal(false)}
+          onSave={(form) => handleAddBudget('outflows', form)}
+          onDelete={() => setShowBudgetEditModal(false)}
+          onClaim={() => {}}
+        />
+      )}
 
       {selectedBudgetCategory && (
         <BudgetEditModal
