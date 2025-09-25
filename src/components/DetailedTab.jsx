@@ -9,7 +9,7 @@ export default function DetailedTab({ transactions, editTransaction, deleteTrans
   const [selected, setSelected] = useState(null)
   const [filters, setFilters] = useState({ month: '', type: '', category: '', amtSign: '', amtValue: '' })
 
-  const openEdit = (tx) => { setSelected(tx); setOpen(true) }
+  const openEdit = (transaction) => { setSelected(transaction); setOpen(true) }
 
   const months = [...new Set(transactions.map(t => t.date.slice(0, 7)))] // YYYY-MM
   const categories = [...new Set(transactions.map(t => t.category || '-'))]
@@ -81,13 +81,13 @@ export default function DetailedTab({ transactions, editTransaction, deleteTrans
               </tr>
             </thead>
             <tbody>
-              {filtered.map(tx => (
-                <tr key={tx.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(tx)}>
-                  <td className="td">{tx.date}</td>
-                  <td className="td capitalize">{tx.type}</td>
-                  <td className="td">{tx.type === 'inflow' ? '+' : '-'}{money(tx.amount)}</td>
-                  <td className="td">{tx.category || '-'}</td>
-                  <td className="td">{tx.description || ''}</td>
+              {filtered.map(transaction => (
+                <tr key={transaction.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openEdit(transaction)}>
+                  <td className="td">{transaction.date}</td>
+                  <td className="td capitalize">{transaction.type}</td>
+                  <td className="td">{transaction.type === 'inflow' ? '+' : '-'}{money(transaction.amount)}</td>
+                  <td className="td">{transaction.category || '-'}</td>
+                  <td className="td">{transaction.description || ''}</td>
                 </tr>
               ))}
             </tbody>
