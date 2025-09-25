@@ -32,7 +32,7 @@ export function rollForward(type, start) {
     return new Date(start.getFullYear(), start.getMonth() + 1, 1)
   }
   if (type === "Monthly") return new Date(start.getFullYear(), start.getMonth() + 1, start.getDate())
-  if (type === "Annual") return new Date(start.getFullYear() + 1, 0, 1)
+  if (type === "Annually") return new Date(start.getFullYear() + 1, 0, 1)
   if (type === "Custom") return new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000)
 }
 
@@ -45,6 +45,6 @@ export function rollBackward(type, start) {
     return new Date(start.getFullYear(), start.getMonth(), 1)
   }
   if (type === "Monthly") return new Date(start.getFullYear(), start.getMonth() - 1, start.getDate())
-  if (type === "Annual") return new Date(start.getFullYear() - 1, 0, 1)
+  if (type === "Annually") return new Date(start.getFullYear() - 1, 0, 1)
   if (type === "Custom") return new Date(start.getTime() - 30 * 24 * 60 * 60 * 1000)
 }
