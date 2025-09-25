@@ -14,7 +14,7 @@ export function calcPeriodEnd(type, start) {
   if (type === "Monthly") {
     return new Date(start.getFullYear(), start.getMonth() + 1, start.getDate() - 1)
   }
-  if (type === "Annual") {
+  if (type === "Annually") {
     return new Date(start.getFullYear(), 11, 31)
   }
   if (type === "Custom") {

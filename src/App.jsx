@@ -231,12 +231,7 @@ function App() {
           onSave={handleAddTransaction}
         />
       )}
-      {showBudgetEditModal && (
-        <BudgetEditModal
-          onClose={() => setShowBudgetEditModal(false)}
-          onSave={(form) => handleAddBudget('outflows', form)}
-        />
-      )}
+      
       {selectedTransaction && (
         <TransactionEditModal
           open={!!selectedTransaction}
