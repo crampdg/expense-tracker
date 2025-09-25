@@ -1,4 +1,3 @@
-import { useState, useMemo } from 'react'
 import WalletTab from './components/WalletTab.jsx'
 import BudgetTab from './components/BudgetTab.jsx'
 import DetailedTab from './components/DetailedTab.jsx'
