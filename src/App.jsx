@@ -9,6 +9,57 @@ import TransactionEditModal from './components/modals/TransactionEditModal.jsx'
 import BottomNav from './components/ui/BottomNav.jsx'
 import { useState, useMemo, useEffect } from 'react'
 
+function calcPeriodEnd(type, start) {
+  if (type === "Weekly") {
+    return new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000)
+  }
+  if (type === "Biweekly") {
+    return new Date(start.getTime() + 13 * 24 * 60 * 60 * 1000)
+  }
+  if (type === "SemiMonthly") {
+    // if start is 1st, end on 15th; else end on last day of month
+    const s = start.getDate()
+    if (s <= 1) return new Date(start.getFullYear(), start.getMonth(), 15)
+    return new Date(start.getFullYear(), start.getMonth() + 1, 0)
+  }
+  if (type === "Monthly") {
+    return new Date(start.getFullYear(), start.getMonth() + 1, start.getDate() - 1)
+  }
+  if (type === "Annual") {
+    return new Date(start.getFullYear(), 11, 31)
+  }
+  if (type === "Custom") {
+    // fallback: 30 days
+    return new Date(start.getTime() + 29 * 24 * 60 * 60 * 1000)
+  }
+}
+
+function rollForward(type, start) {
+  if (type === "Weekly") return new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
+  if (type === "Biweekly") return new Date(start.getTime() + 14 * 24 * 60 * 60 * 1000)
+  if (type === "SemiMonthly") {
+    const s = start.getDate()
+    if (s <= 1) return new Date(start.getFullYear(), start.getMonth(), 16)
+    return new Date(start.getFullYear(), start.getMonth() + 1, 1)
+  }
+  if (type === "Monthly") return new Date(start.getFullYear(), start.getMonth() + 1, start.getDate())
+  if (type === "Annual") return new Date(start.getFullYear() + 1, 0, 1)
+  if (type === "Custom") return new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000)
+}
+
+function rollBackward(type, start) {
+  if (type === "Weekly") return new Date(start.getTime() - 7 * 24 * 60 * 60 * 1000)
+  if (type === "Biweekly") return new Date(start.getTime() - 14 * 24 * 60 * 60 * 1000)
+  if (type === "SemiMonthly") {
+    const s = start.getDate()
+    if (s <= 1) return new Date(start.getFullYear(), start.getMonth() - 1, 16)
+    return new Date(start.getFullYear(), start.getMonth(), 1)
+  }
+  if (type === "Monthly") return new Date(start.getFullYear(), start.getMonth() - 1, start.getDate())
+  if (type === "Annual") return new Date(start.getFullYear() - 1, 0, 1)
+  if (type === "Custom") return new Date(start.getTime() - 30 * 24 * 60 * 60 * 1000)
+}
+
 
 function App() {
   const [activeTab, setActiveTab] = useState('wallet')
@@ -16,7 +67,21 @@ function App() {
   const [showMoneyTimeModal, setShowMoneyTimeModal] = useState(false)
   const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
   const [showTransactionEditModal, setShowTransactionEditModal] = useState(false)
+  const [periodOffset, setPeriodOffset] = useState(0)
 
+  const displayedStart = (() => {
+    let start = new Date(periodConfig.anchorDate)
+    if (periodOffset > 0) {
+      for (let i = 0; i < periodOffset; i++) start = rollForward(periodConfig.type, start)
+    } else if (periodOffset < 0) {
+      for (let i = 0; i < Math.abs(periodOffset); i++) start = rollBackward(periodConfig.type, start)
+    }
+    return start
+  })()
+
+  const displayedEnd = calcPeriodEnd(periodConfig.type, displayedStart)
+
+  
   const [transactions, setTransactions] = useState(() => {
     const saved = localStorage.getItem("transactions")
     return saved ? JSON.parse(saved) : []
@@ -27,16 +92,19 @@ function App() {
     return saved ? JSON.parse(saved) : { inflows: [], outflows: [] }
   })
 
-  const [period, setPeriod] = useState(() => {
-    const saved = localStorage.getItem("period")
-    return saved ? JSON.parse(saved) : { type: 'Monthly', day: 1 }
+  // Replace these old states:
+  // const [period, setPeriod] = useState(...)
+  // const [periodEnd, setPeriodEnd] = useState(...)
+
+  const [periodConfig, setPeriodConfig] = useState(() => {
+    const saved = localStorage.getItem("periodConfig")
+    return saved ? JSON.parse(saved) : { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
   })
 
-  const [periodEnd, setPeriodEnd] = useState(() => {
-    const saved = localStorage.getItem("periodEnd")
-    return saved ? new Date(saved) : new Date()
-  })
+  const [periodStart, setPeriodStart] = useState(new Date(periodConfig.anchorDate))
+  const [periodEnd, setPeriodEnd] = useState(calcPeriodEnd(periodConfig.type, new Date(periodConfig.anchorDate)))
 
+  
 
   const [selectedTransaction, setSelectedTransaction] = useState(null)
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState(null)
@@ -52,13 +120,21 @@ function App() {
     localStorage.setItem("budget", JSON.stringify(budget))
   }, [budget])
 
+  // persisting periods
   useEffect(() => {
-    localStorage.setItem("period", JSON.stringify(period))
-  }, [period])
+    localStorage.setItem("periodConfig", JSON.stringify(periodConfig))
+  }, [periodConfig])
 
+  // auto-roll forward when today passes the end
   useEffect(() => {
-    localStorage.setItem("periodEnd", periodEnd.toISOString())
-  }, [periodEnd])
+    const today = new Date()
+    if (today > periodEnd) {
+      const newStart = rollForward(periodConfig.type, periodStart)
+      const newEnd = calcPeriodEnd(periodConfig.type, newStart)
+      setPeriodStart(newStart)
+      setPeriodEnd(newEnd)
+    }
+  }, [periodConfig, periodEnd])
 
 
 
@@ -164,6 +240,8 @@ function App() {
             setBudgets={setBudget}
             onClaim={handleClaimBudget}
             transactions={transactions}
+            periodOffset={periodOffset}
+            setPeriodOffset={setPeriodOffset}
           />
         )}
         {activeTab === 'detailed' && (
@@ -178,6 +256,12 @@ function App() {
         {activeTab === 'summary' && (
           <SummaryTab transactions={transactions} budget={budget} />
         )}
+
+        {activeTab === 'settings' && (
+          <PeriodSettings periodConfig={periodConfig} setPeriodConfig={setPeriodConfig} />
+        )}
+
+
       </div>
 
       <BottomNav active={activeTab} setActive={setActiveTab} />
@@ -226,5 +310,7 @@ function App() {
     </div>
   )
 }
+
+
 
 export default App

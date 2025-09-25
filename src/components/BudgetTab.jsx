@@ -9,6 +9,7 @@ export default function BudgetTab({
   budgets, setBudgets,
   onClaim,
   transactions, // <-- pass from App.jsx (see step 3)
+  periodOffset, setPeriodOffset
 }) {
   const [editing, setEditing] = useState(null) // {section, index, isNew}
   const [history, setHistory] = useState([])   // stack of prior budgets for Undo
@@ -122,7 +123,28 @@ export default function BudgetTab({
           <h2 className="text-center font-bold">Budget</h2>
           <Button variant="ghost" onClick={undo} disabled={!history.length}>Undo</Button>
         </div>
-        <p className="text-center text-gray-600 mb-4">Period Ended {periodEnd.toDateString()}</p>
+        
+        <div className="flex justify-between items-center mb-2">
+          <button
+            className="px-2 py-1 bg-gray-200 rounded"
+            onClick={() => setPeriodOffset(prev => prev - 1)}
+          >
+            ← Previous
+          </button>
+          <p>
+            Period: {periodStart.toDateString()} – {periodEnd.toDateString()}
+          </p>
+          <button
+            className="px-2 py-1 bg-gray-200 rounded"
+            onClick={() => setPeriodOffset(prev => prev + 1)}
+          >
+            Next →
+          </button>
+        </div>
+
+        <p>
+          Current Period: {periodStart.toDateString()} – {periodEnd.toDateString()}
+        </p>
 
         <div className="flex justify-center gap-2 mb-6">
           <select value={period.type} onChange={e => setPeriodType(e.target.value)} className="select">
