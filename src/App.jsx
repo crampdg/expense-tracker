@@ -104,10 +104,13 @@ function App() {
 
 
   const handleEditTransaction = (updatedTransaction) => {
-    setTransactions(transactions.map(t =>
-      t.id === updatedTransaction.id ? updatedTransaction : t
-    ))
+    setTransactions(prev =>
+      prev.map(t =>
+        t.id === updatedTransaction.id ? { ...t, ...updatedTransaction } : t
+      )
+    )
   }
+
 
   const handleDeleteTransaction = (id) => {
     setTransactions(transactions.filter(t => t.id !== id))
