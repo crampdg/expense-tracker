@@ -176,7 +176,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 pb-20">
         {activeTab === 'wallet' && (
           <WalletTab
             budget={budget}
@@ -207,8 +207,13 @@ function App() {
         )}
 
         {activeTab === 'summary' && (
-          <SummaryTab transactions={transactions} budget={budget} />
+          <SummaryTab
+            transactions={transactions}
+            budget={budget}
+            periodEnd={periodEnd}
+          />
         )}
+
 
         {activeTab === 'settings' && (
           <PeriodSettings periodConfig={periodConfig} setPeriodConfig={setPeriodConfig} />
