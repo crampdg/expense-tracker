@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 
 export default function TransactionEditModal({ open, onClose, transaction, onSave, onDelete }) {
   const [form, setForm] = useState(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+
 
   useEffect(() => {
     setForm(transaction ? { ...transaction } : null)
@@ -17,9 +19,11 @@ export default function TransactionEditModal({ open, onClose, transaction, onSav
       <form
         className="grid gap-3"
         onSubmit={e => {
-          e.preventDefault()
-          onSave({ ...form, amount: Number(form.amount || 0) })
+            e.preventDefault()
+            onSave({ ...form, id: transaction.id, amount: Number(form.amount || 0) })
+            onClose()
         }}
+
       >
         <input
           className="input"
@@ -56,17 +60,33 @@ export default function TransactionEditModal({ open, onClose, transaction, onSav
           onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
         />
         <div className="flex justify-between gap-2">
-            <Button
-                variant="ghost"
-                type="button"
-                onClick={() => {
-                    if (window.confirm("Are you sure you want to delete this transaction?")) {
-                    onDelete()
-                    }
-                }}
-            >
-                Delete
-            </Button>
+            {!confirmingDelete ? (
+                <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={() => setConfirmingDelete(true)}
+                >
+                    Delete
+                </Button>
+                ) : (
+                <div className="flex gap-2">
+                    <Button
+                    variant="destructive"
+                    type="button"
+                    onClick={() => onDelete()}
+                    >
+                    Yes, delete
+                    </Button>
+                    <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={() => setConfirmingDelete(false)}
+                    >
+                    Cancel
+                    </Button>
+                </div>
+                )}
+
 
           <div className="flex gap-2">
             <Button variant="ghost" type="button" onClick={onClose}>

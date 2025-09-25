@@ -80,7 +80,9 @@ function App() {
 
   // Handlers
   const handleAddTransaction = (transaction) => {
-    setTransactions([...transactions, transaction])
+    const txWithId = { id: Date.now(), ...transaction }
+    setTransactions([...transactions, txWithId])
+
 
     // Auto-add category into budget if missing
     if (transaction.type === 'inflow') {
@@ -195,11 +197,17 @@ function App() {
       )}
       {selectedTransaction && (
         <TransactionEditModal
-          transaction={selectedTransaction}
+          open={!!selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
+          transaction={selectedTransaction}
           onSave={handleEditTransaction}
+          onDelete={() => {
+            handleDeleteTransaction(selectedTransaction.id)
+            setSelectedTransaction(null)
+          }}
         />
       )}
+
       {selectedBudgetCategory && (
         <BudgetEditModal
           category={selectedBudgetCategory}
