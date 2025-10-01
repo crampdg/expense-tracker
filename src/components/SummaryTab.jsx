@@ -1,22 +1,22 @@
 import { useMemo } from "react"
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from "recharts"
 import Card from "./ui/Card.jsx"
-import Button from "./ui/Button.jsx"
 import { money } from "../utils/format.js"
 import ExportPDFButton from "./ui/ExportPDFButton.jsx"
 import SharePDFButton from "./ui/SharePDFButton.jsx"
 
 
 export default function SummaryTab({ transactions, budget, periodEnd }) {
+    const txs = Array.isArray(transactions) ? transactions : [];
   // --- Data prep ---
   const inflowsTotal = useMemo(
-    () => transactions.filter(t => t.type === "inflow").reduce((s, t) => s + Number(t.amount || 0), 0),
-    [transactions]
+    () => txs.filter(t => t.type === "inflow").reduce((s, t) => s + Number(t.amount || 0), 0),
+    [txs]
   )
 
   const outflowsTotal = useMemo(
-    () => transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0),
-    [transactions]
+    () => txs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0),
+    [txs]
   )
 
   const net = inflowsTotal - outflowsTotal
@@ -37,7 +37,7 @@ export default function SummaryTab({ transactions, budget, periodEnd }) {
   // Category breakdown (top 5 outflows)
   const outflowByCategory = useMemo(() => {
     const m = {}
-    for (const t of transactions) {
+    for (const t of txs) {
       if (t.type !== "expense") continue
       m[t.category] = (m[t.category] || 0) + Number(t.amount || 0)
     }
@@ -45,7 +45,7 @@ export default function SummaryTab({ transactions, budget, periodEnd }) {
       .map(([cat, amt]) => ({ category: cat, amount: amt }))
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5)
-  }, [transactions])
+  }, [txs])
 
   // Insight text
   const topCategory = outflowByCategory[0]
