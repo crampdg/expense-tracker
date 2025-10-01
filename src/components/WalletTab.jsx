@@ -1,236 +1,127 @@
-import { useMemo, useState } from "react"
-import Card from "./ui/Card.jsx"
-import Button from "./ui/Button.jsx"
-import MoneyTimeModal from "./modals/MoneyTimeModal.jsx"
-import { money } from "../utils/format.js"
-import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils"
+import React, { useState, useMemo } from "react";
+import MoneyTimeModal from "./modals/MoneyTimeModal";
 
-/**
- * WalletTab
- * Props:
- *  - budget: { inflows: [{category, amount}], outflows: [{category, amount}] }
- *  - transactions: [{ id, type: 'inflow'|'expense', amount, category, date: 'YYYY-MM-DD', ... }]
- *  - onAddTransaction: (tx) => void
- *
- * Visual goals:
- *  - Clear KPIs: Cash on Hand, Suggested Daily, Days Left
- *  - Consistent period context (reads periodConfig from localStorage)
- *  - Big, friendly "Money Time!" CTA
- *  - Clean, readable recent transactions list
- */
 export default function WalletTab({ budget, transactions, onAddTransaction }) {
-  const [showMoneyTime, setShowMoneyTime] = useState(false)
+  const [showMoneyTime, setShowMoneyTime] = useState(false);
 
-  // -------- Period context (align with other tabs) --------
-  const { periodConfig, offsetStart, offsetEnd, startISO, endISO, daysLeft } = useMemo(() => {
-    // Fallback to saved config or Monthly anchored to today
-    let p = { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
-    try {
-      const saved = localStorage.getItem("periodConfig")
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed?.type && parsed?.anchorDate) p = parsed
-      }
-    } catch {}
-    const start = getAnchoredPeriodStart(p.type, p.anchorDate, new Date(), 0) // wallet uses "current" period
-    const end = calcPeriodEnd(p.type, start)
-    const dayMs = 24 * 60 * 60 * 1000
-    const dl = Math.max(0, Math.ceil((end - new Date()) / dayMs))
-    return {
-      periodConfig: p,
-      offsetStart: start,
-      offsetEnd: end,
-      startISO: start.toISOString().slice(0, 10),
-      endISO: end.toISOString().slice(0, 10),
-      daysLeft: dl,
-    }
-  }, [])
-
-  // -------- Budget totals --------
-  const totalInflowsBudget = useMemo(
+  // ✅ Calculate totals from budget
+  const totalInflows = useMemo(
     () => (budget?.inflows || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0),
     [budget]
-  )
+  );
   const totalOutflowsBudget = useMemo(
     () => (budget?.outflows || []).reduce((sum, o) => sum + (Number(o.amount) || 0), 0),
     [budget]
-  )
+  );
 
-  // -------- Actuals (global + period-scoped) --------
-  const txs = Array.isArray(transactions) ? transactions : []
+  // ✅ Calculate actual spending from transactions
+  const actualOutflows = useMemo(
+    () => transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
+    [transactions]
+  );
 
+  // ✅ Correct Cash on Hand calculation from transactions
   const cashOnHand = useMemo(() => {
-    return txs.reduce((sum, t) => {
-      const amt = Number(t.amount) || 0
-      if (t.type === "inflow") return sum + amt
-      if (t.type === "expense") return sum - amt
-      return sum
-    }, 0)
-  }, [txs])
+    return transactions.reduce((sum, t) => {
+      const amt = Number(t.amount) || 0;
+      if (t.type === "inflow") return sum + amt;
+      if (t.type === "expense") return sum - amt;
+      return sum;
+    }, 0);
+  }, [transactions]);
 
-  const periodTxs = useMemo(
-    () => txs.filter((t) => t?.date && t.date >= startISO && t.date <= endISO),
-    [txs, startISO, endISO]
-  )
 
-  const periodActualOutflows = useMemo(() => {
-    return periodTxs
-      .filter((t) => t.type === "expense")
-      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-  }, [periodTxs])
-
-  // Suggested Daily Spend = remaining cashOnHand for this period / days left
+  // ✅ Suggested Daily Spend = remaining cashOnHand / days left in period
   const suggestedDaily = useMemo(() => {
-    const dl = Math.max(1, daysLeft) // avoid divide-by-zero
-    return cashOnHand / dl
-  }, [cashOnHand, daysLeft])
+    const today = new Date();
+    const end = new Date(budget?.periodEnd || new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    const daysLeft = Math.max(
+      1,
+      Math.ceil((end - today) / (1000 * 60 * 60 * 24))
+    );
 
-  // -------- UI data --------
+    return cashOnHand / daysLeft;
+  }, [budget?.periodEnd, cashOnHand]);
+
+
+  // ✅ Show the 3 most recent transactions
   const recentTransactions = useMemo(() => {
-    return [...txs].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6)
-  }, [txs])
+    return [...transactions]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 3);
+  }, [transactions]);
 
-  const categories = useMemo(() => {
-    const inflowCats = (budget?.inflows || []).map((i) => i.category)
-    const outflowCats = (budget?.outflows || []).map((o) => o.category)
-    return Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean)
-  }, [budget])
-
-  // -------- Render --------
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <Card className="p-4 md:p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-xl font-bold tracking-tight">Wallet</h2>
-            <p className="text-sm text-gray-600">
-              {periodConfig.type}: {offsetStart.toDateString()} – {offsetEnd.toDateString()}
-            </p>
-          </div>
-          <Button
-            variant="primary"
-            size="md"
-            type="button"
-            onClick={() => setShowMoneyTime(true)}
-            title="Add a quick transaction"
-          >
-            💸 Money Time!
-          </Button>
-        </div>
+    <div className="p-6 flex flex-col items-center space-y-6">
+      {/* Cash on Hand */}
+      <div className="text-center">
+        <h2 className="text-xl font-semibold text-gray-600">Cash on Hand</h2>
+        <p className="text-4xl font-bold mt-2">
+          ${isNaN(cashOnHand) ? "0.00" : cashOnHand.toFixed(2)}
+        </p>
+      </div>
 
-        {/* KPI row */}
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="text-center">
-            <div className="text-xs text-gray-500">Cash on Hand</div>
-            <div className="text-2xl md:text-3xl font-bold">{money(cashOnHand)}</div>
-          </Card>
+      {/* Suggested Daily Spend */}
+      <div className="text-center">
+        <h3 className="text-lg font-medium text-gray-600">
+          Suggested Daily Spend
+        </h3>
+        <p className="text-2xl text-green-600 font-bold">
+          ${isNaN(suggestedDaily) ? "0.00" : suggestedDaily.toFixed(2)}
+        </p>
+      </div>
 
-          <Card className="text-center">
-            <div className="text-xs text-gray-500">Suggested Daily Spend</div>
-            <div className="text-xl md:text-2xl font-semibold text-green-700">
-              {money(suggestedDaily)}
-            </div>
-          </Card>
 
-          <Card className="text-center">
-            <div className="text-xs text-gray-500">Budgeted Inflows</div>
-            <div className="text-lg font-semibold">{money(totalInflowsBudget)}</div>
-          </Card>
-
-          <Card className="text-center">
-            <div className="text-xs text-gray-500">Budgeted Outflows</div>
-            <div className="text-lg font-semibold">{money(totalOutflowsBudget)}</div>
-          </Card>
-        </div>
-      </Card>
+      {/* Money Time Button */}
+      <button
+        onClick={() => setShowMoneyTime(true)}
+        className="bg-yellow-400 text-black font-bold text-lg px-6 py-3 rounded-full shadow-lg hover:bg-yellow-300 transition"
+      >
+        MONEY TIME! 💸
+      </button>
 
       {/* Recent Transactions */}
-      <Card className="p-0 overflow-hidden">
-        <div className="flex items-center justify-between p-4 pb-3">
-          <h3 className="font-semibold">Recent Transactions</h3>
-          <div className="text-xs text-gray-500">
-            Period: {startISO} → {endISO}
-          </div>
-        </div>
-
+      <div className="w-full mt-6">
+        <h4 className="text-md font-semibold text-gray-700 mb-2 text-center">
+          Recent Transactions
+        </h4>
         {recentTransactions.length > 0 ? (
-          <ul className="divide-y divide-gray-200">
-            {recentTransactions.map((t) => {
-              const isExpense = t.type === "expense"
-              const amt = Number(t.amount) || 0
-              const dateStr = t.date ? new Date(t.date + "T00:00:00").toLocaleDateString() : "—"
-              return (
-                <li key={t.id ?? `${t.category}-${t.date}-${amt}`} className="px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            isExpense
-                              ? "bg-red-50 text-red-700 border border-red-200"
-                              : "bg-green-50 text-green-700 border border-green-200"
-                          }`}
-                        >
-                          {isExpense ? "Expense" : "Inflow"}
-                        </span>
-                        <span className="truncate text-sm font-medium">
-                          {t.category || "Uncategorized"}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5">{dateStr}</div>
-                    </div>
-                    <div
-                      className={`text-sm md:text-base font-semibold tabular-nums ${
-                        isExpense ? "text-red-600" : "text-green-700"
-                      }`}
-                    >
-                      {isExpense ? "-" : "+"}
-                      {money(amt)}
-                    </div>
-                  </div>
-                </li>
-              )
-            })}
+          <ul className="space-y-2">
+            {recentTransactions.map((t, idx) => (
+              <li
+                key={idx}
+                className="flex justify-between bg-gray-100 rounded-lg p-2 shadow-sm"
+              >
+                <span className="text-sm">{t.category || "Uncategorized"}</span>
+                <span
+                  className={`text-sm font-medium ${
+                    t.type === "expense" ? "text-red-600" : "text-green-600"
+                  }`}
+                >
+                  {t.type === "expense" ? "-" : "+"}${(Number(t.amount) || 0).toFixed(2)}
+                </span>
+
+              </li>
+            ))}
           </ul>
         ) : (
-          <div className="px-4 py-6 text-center text-sm text-gray-500">
-            No recent transactions yet.
-          </div>
+          <p className="text-sm text-gray-500 text-center">No recent spends</p>
         )}
-      </Card>
-
-      {/* Period insights (optional, simple readout) */}
-      <Card className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">
-          <div>
-            <span className="font-medium">Days left:</span> {daysLeft}
-          </div>
-          <div className="mt-0.5">
-            <span className="font-medium">Period outflows so far:</span>{" "}
-            {money(periodActualOutflows)}
-          </div>
-        </div>
-
-        <Button
-          variant="ghost"
-          type="button"
-          onClick={() => setShowMoneyTime(true)}
-          title="Add a quick spend/income"
-        >
-          + Add Transaction
-        </Button>
-      </Card>
+      </div>
 
       {/* Modal */}
       {showMoneyTime && (
         <MoneyTimeModal
           open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
-          onSave={onAddTransaction}
-          categories={categories}
+          onSave={onAddTransaction}          // ✅ match expected prop
+          categories={[
+            ...budget.inflows.map(i => i.category),
+            ...budget.outflows.map(o => o.category),
+          ]}
         />
       )}
+
     </div>
-  )
+  );
 }
