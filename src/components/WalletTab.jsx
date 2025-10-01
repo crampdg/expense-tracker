@@ -1,10 +1,48 @@
 import React, { useState, useMemo } from "react";
 import MoneyTimeModal from "./modals/MoneyTimeModal";
-// Period helpers so Suggested Daily has a sensible end date (falls back to end-of-month if config is missing)
+import SavingsSettingsModal from "./modals/SavingsSettingsModal.jsx";
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils";
+import { Settings as Gear } from "lucide-react";
+
+/** helpers */
+function clamp01(x){ return Math.min(0.99, Math.max(0, x)); }
+function readSettings() {
+  const pickNum = (k, d=0) => {
+    try { const v = Number(localStorage.getItem(k)); return Number.isFinite(v) ? Math.max(0, v) : d; } catch { return d; }
+  };
+  const pickPct = (k, d=0) => clamp01(pickNum(k, d));
+  return {
+    savingsRate:              pickPct("savingsRate", 0.10),
+    fixedMonthlySavings:      pickNum("fixedMonthlySavings", 0),
+    includeOneOffInflowsPct:  pickPct("includeOneOffInflowsPct", 0.50),
+    sinkingAccrualMonthly:    pickNum("sinkingAccrualMonthly", 0),
+    suggestedDailyBufferPct:  pickPct("suggestedDailyBufferPct", 0.10),
+  };
+}
+function saveSettings(s) {
+  try {
+    localStorage.setItem("savingsRate", String(clamp01(s.savingsRate)));
+    localStorage.setItem("fixedMonthlySavings", String(Math.max(0, s.fixedMonthlySavings)));
+    localStorage.setItem("includeOneOffInflowsPct", String(clamp01(s.includeOneOffInflowsPct)));
+    localStorage.setItem("sinkingAccrualMonthly", String(Math.max(0, s.sinkingAccrualMonthly)));
+    localStorage.setItem("suggestedDailyBufferPct", String(clamp01(s.suggestedDailyBufferPct)));
+  } catch {}
+}
+function periodMonthsFactor(t) {
+  switch (t) {
+    case "Monthly": return 1;
+    case "SemiMonthly": return 0.5;
+    case "Biweekly": return 0.5;
+    case "Weekly": return 0.25;
+    case "Annually": return 12;
+    default: return 1;
+  }
+}
 
 export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [showMoneyTime, setShowMoneyTime] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState(readSettings());
 
   // ---- Safe inputs ----
   const txs = Array.isArray(transactions) ? transactions : [];
@@ -12,7 +50,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const outflowCats = (budget?.outflows || []).map((o) => o.category);
   const categories = Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean);
 
-  // ---- Cash on Hand (minimal + correct) ----
+  // ---- Cash on Hand ----
   const cashOnHand = useMemo(() => {
     return txs.reduce((sum, t) => {
       const amt = Number(t.amount) || 0;
@@ -22,8 +60,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     }, 0);
   }, [txs]);
 
-  // ---- Suggested Daily: use current anchored period if available; else end of this month ----
-  const { startISO, endISO, daysLeft } = useMemo(() => {
+  // ---- Period window ----
+  const { startISO, endISO, daysLeft, periodType } = useMemo(() => {
     let type = "Monthly";
     let anchor = new Date().toISOString().slice(0, 10);
     try {
@@ -44,19 +82,75 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       startISO: start.toISOString().slice(0, 10),
       endISO: end.toISOString().slice(0, 10),
       daysLeft: left,
+      periodType: type,
     };
   }, []);
 
-  const suggestedDaily = useMemo(() => cashOnHand / daysLeft, [cashOnHand, daysLeft]);
+  // ---- Budget plan totals ----
+  const plannedInflows = useMemo(
+    () => (budget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0),
+    [budget]
+  );
+  const plannedOutflows = useMemo(
+    () => (budget?.outflows || []).reduce((s, o) => s + (Number(o.amount) || 0), 0),
+    [budget]
+  );
 
-  // ---- Simple, recent list (3 items) ----
+  // ---- Actuals this period ----
+  const { actualInflows, actualOutflows } = useMemo(() => {
+    let inflow = 0, outflow = 0;
+    for (const t of txs) {
+      const d = t.date || "";
+      if (d >= startISO && d <= endISO) {
+        const amt = Number(t.amount) || 0;
+        if (t.type === "inflow") inflow += amt;
+        else if (t.type === "expense") outflow += amt;
+      }
+    }
+    return { actualInflows: inflow, actualOutflows: outflow };
+  }, [txs, startISO, endISO]);
+
+  // ---- Remaining planned amounts ----
+  const remainingPlannedInflows = Math.max(0, plannedInflows - actualInflows);
+  const remainingPlannedOutflows = Math.max(0, plannedOutflows - actualOutflows);
+
+  // ---- Projected end cash ----
+  const projectedEndCash = cashOnHand + remainingPlannedInflows - remainingPlannedOutflows;
+
+  // ---- Savings & sinking (this period) from settings ----
+  const projectedIncome =
+    actualInflows + remainingPlannedInflows * settings.includeOneOffInflowsPct;
+  const savingsFirst = Math.max(settings.fixedMonthlySavings, projectedIncome * settings.savingsRate);
+  const sinkThisPeriod = settings.sinkingAccrualMonthly * periodMonthsFactor(periodType);
+  const savingsReserved = Math.max(0, savingsFirst + sinkThisPeriod);
+
+  // ---- Suggested Daily (smart) ----
+  const hasAnyBudget =
+    ((budget?.inflows?.length || 0) + (budget?.outflows?.length || 0)) > 0;
+
+  const suggestedDaily = useMemo(() => {
+    const simple = cashOnHand / daysLeft;
+    if (!hasAnyBudget) return Math.max(0, simple);
+    const adjustedProjectedEnd = projectedEndCash - savingsReserved;
+    const buffered = (adjustedProjectedEnd * (1 - settings.suggestedDailyBufferPct)) / daysLeft;
+    return Math.max(0, buffered);
+  }, [
+    cashOnHand,
+    daysLeft,
+    hasAnyBudget,
+    projectedEndCash,
+    savingsReserved,
+    settings.suggestedDailyBufferPct,
+  ]);
+
+  // ---- Recent list ----
   const recentTransactions = useMemo(() => {
     return [...txs]
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
       .slice(0, 3);
   }, [txs]);
 
-  // ---- Amount formatting (no currency symbol) ----
+  // ---- Formatting ----
   const formatAmount = (n) => {
     const num = Number(n);
     if (!Number.isFinite(num)) return "0.00";
@@ -64,22 +158,46 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     const abs = Math.abs(num);
     return sign + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-
   const amountClass = (n) =>
     n < 0 ? "text-red-600" : n > 0 ? "text-emerald-700" : "text-gray-700";
 
+  // ---- Handlers ----
+  const openSettings = () => setShowSettings(true);
+  const saveSettingsAndRefresh = (newVals) => {
+    saveSettings(newVals);
+    setSettings(newVals); // trigger recompute immediately
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6">
-      {/* HERO — friendly green gradient; icon removed to maximize text width */}
+      {/* HERO */}
       <div className="relative overflow-hidden rounded-3xl shadow-sm border border-emerald-200 bg-gradient-to-b from-emerald-300 to-emerald-500">
-        {/* soft texture bubbles */}
+        {/* bubbles */}
         <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
         <div className="absolute -bottom-16 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
 
-        <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          {/* Copy-only layout (no left icon) */}
-          <div className="text-sm text-emerald-950/90">Cash on Hand</div>
+        {/* tiny gear – top-right */}
+        <button
+          type="button"
+          onClick={openSettings}
+          aria-label="Savings & Daily settings"
+          title="Savings & Daily settings"
+          className="absolute top-2 right-2 p-2 rounded-full bg-white/40 hover:bg-white/60 active:bg-white/50 text-emerald-900"
+        >
+          <Gear size={18} />
+        </button>
 
+        <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
+          {/* Savings (reserved) */}
+          <div className="flex items-baseline justify-between">
+            <div className="text-xs text-emerald-950/85">Savings (reserved this period)</div>
+            <div className="text-base font-semibold text-emerald-950">
+              {formatAmount(savingsReserved)}
+            </div>
+          </div>
+
+          {/* Cash on Hand */}
+          <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
           <div
             className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${
               cashOnHand < 0 ? "text-red-700" : "text-emerald-900"
@@ -89,14 +207,23 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
             {formatAmount(cashOnHand)}
           </div>
 
+          {/* Suggested Daily */}
           <div className="mt-3 flex items-baseline gap-2">
-            <div className="text-sm text-emerald-950/80">Suggested Daily</div>
+            <div
+              className="text-sm text-emerald-950/80"
+              title={
+                hasAnyBudget
+                  ? "After planned bills/inflows, savings & sinking funds, plus safety buffer"
+                  : "Cash ÷ days left"
+              }
+            >
+              Suggested Daily
+            </div>
             <div className={`text-2xl font-bold ${amountClass(suggestedDaily)}`}>
               {formatAmount(suggestedDaily)}
             </div>
           </div>
 
-          {/* Tiny period hint */}
           <div className="mt-1 text-xs text-emerald-950/70">
             through <span className="font-medium">{endISO}</span>
           </div>
@@ -118,7 +245,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         </div>
       </div>
 
-      {/* Recent — ultra minimal */}
+      {/* Recent */}
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="text-sm font-semibold text-gray-800">Recent Transactions</div>
@@ -166,13 +293,21 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modals */}
       {showMoneyTime && (
         <MoneyTimeModal
           open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
           onSave={onAddTransaction}
           categories={categories}
+        />
+      )}
+      {showSettings && (
+        <SavingsSettingsModal
+          open={showSettings}
+          onClose={() => setShowSettings(false)}
+          value={settings}
+          onSave={saveSettingsAndRefresh}
         />
       )}
     </div>
