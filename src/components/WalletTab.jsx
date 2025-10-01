@@ -56,78 +56,64 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       .slice(0, 3);
   }, [txs]);
 
-  // ---- Tiny helpers ----
-  const money = (n) =>
-    (isNaN(n) ? 0 : n).toLocaleString(undefined, {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 2,
-    });
+  // ---- Amount formatting (no currency symbol) ----
+  const formatAmount = (n) => {
+    const num = Number(n);
+    if (!Number.isFinite(num)) return "0.00";
+    const sign = num < 0 ? "-" : "";
+    const abs = Math.abs(num);
+    return sign + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
 
   const amountClass = (n) =>
-    n < 0 ? "text-red-600" : n > 0 ? "text-emerald-600" : "text-gray-700";
+    n < 0 ? "text-red-600" : n > 0 ? "text-emerald-700" : "text-gray-700";
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      {/* HERO — friendly green gradient with mascot */}
+      {/* HERO — friendly green gradient; icon removed to maximize text width */}
       <div className="relative overflow-hidden rounded-3xl shadow-sm border border-emerald-200 bg-gradient-to-b from-emerald-300 to-emerald-500">
         {/* soft texture bubbles */}
         <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
         <div className="absolute -bottom-16 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          <div className="flex items-start gap-4">
-            {/* Mascot placeholder (use your /public/icon.png; replace later if needed) */}
-            <div className="shrink-0">
-              <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/90 border border-emerald-200 shadow-sm overflow-hidden flex items-center justify-center">
-                {/* Placeholder image — swap later if you want a different art */}
-                <img
-                  src="/icon.png"
-                  alt="Blehxpenses Mascot"
-                  className="w-14 h-14 md:w-16 md:h-16 object-contain"
-                />
-              </div>
+          {/* Copy-only layout (no left icon) */}
+          <div className="text-sm text-emerald-950/90">Cash on Hand</div>
+
+          <div
+            className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${
+              cashOnHand < 0 ? "text-red-700" : "text-emerald-900"
+            }`}
+            aria-live="polite"
+          >
+            {formatAmount(cashOnHand)}
+          </div>
+
+          <div className="mt-3 flex items-baseline gap-2">
+            <div className="text-sm text-emerald-950/80">Suggested Daily</div>
+            <div className={`text-2xl font-bold ${amountClass(suggestedDaily)}`}>
+              {formatAmount(suggestedDaily)}
             </div>
+          </div>
 
-            {/* Copy */}
-            <div className="grow">
-              <div className="text-sm text-emerald-950/90">Cash on Hand</div>
-              <div
-                className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${
-                  cashOnHand < 0 ? "text-red-700" : "text-emerald-900"
-                }`}
-                aria-live="polite"
-              >
-                {money(cashOnHand)}
-              </div>
+          {/* Tiny period hint */}
+          <div className="mt-1 text-xs text-emerald-950/70">
+            through <span className="font-medium">{endISO}</span>
+          </div>
 
-              <div className="mt-3 flex items-baseline gap-2">
-                <div className="text-sm text-emerald-950/80">Suggested Daily</div>
-                <div className={`text-2xl font-bold ${amountClass(suggestedDaily)}`}>
-                  {money(suggestedDaily)}
-                </div>
-              </div>
-
-              {/* Tiny period hint */}
-              <div className="mt-1 text-xs text-emerald-950/70">
-                through <span className="font-medium">{endISO}</span>
-              </div>
-
-              {/* CTA */}
-              <div className="mt-4">
-                <button
-                  onClick={() => setShowMoneyTime(true)}
-                  type="button"
-                  className="inline-flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:bg-yellow-300
-                             text-yellow-900 font-extrabold tracking-wide px-5 py-2.5 rounded-full shadow
-                             border border-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400"
-                >
-                  <span>💰</span>
-                  <span>MONEY TIME!</span>
-                  <span className="text-lg">✨</span>
-                </button>
-              </div>
-            </div>
+          {/* CTA */}
+          <div className="mt-4">
+            <button
+              onClick={() => setShowMoneyTime(true)}
+              type="button"
+              className="inline-flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:bg-yellow-300
+                         text-yellow-900 font-extrabold tracking-wide px-5 py-2.5 rounded-full shadow
+                         border border-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400"
+            >
+              <span>💰</span>
+              <span>MONEY TIME!</span>
+              <span className="text-lg">✨</span>
+            </button>
           </div>
         </div>
       </div>
@@ -168,7 +154,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                       }`}
                     >
                       {isExpense ? "-" : "+"}
-                      {money(amt)}
+                      {formatAmount(amt)}
                     </div>
                   </div>
                 </li>
@@ -176,9 +162,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
             })}
           </ul>
         ) : (
-          <div className="px-4 py-6 text-center text-sm text-gray-500">
-            No recent spends
-          </div>
+          <div className="px-4 py-6 text-center text-sm text-gray-500">No recent spends</div>
         )}
       </div>
 

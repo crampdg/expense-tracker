@@ -1,3 +1,4 @@
+import walletLogo from "./assets/ui/wallet-logo.png";
 import { calcPeriodEnd, getAnchoredPeriodStart } from "./utils/periodUtils"
 import PeriodSettings from "./components/PeriodSettings"
 import WalletTab from './components/WalletTab.jsx'
@@ -176,7 +177,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="flex-1 overflow-y-auto p-4 pb-20">
+      <div className="flex-1 overflow-y-auto p-4 pb-28">
         {activeTab === 'wallet' && (
           <WalletTab
             budget={budget}
@@ -224,7 +225,7 @@ function App() {
 
       </div>
 
-      <BottomNav active={activeTab} setActive={setActiveTab} />
+      <BottomNav active={activeTab} setActive={setActiveTab} walletIconSrc={walletLogo} />
 
       {/* Modals */}
       {showSpendModal && (
