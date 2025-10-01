@@ -182,19 +182,21 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           onClick={openSettings}
           aria-label="Savings & Daily settings"
           title="Savings & Daily settings"
-          className="absolute top-2 right-2 p-2 rounded-full bg-white/40 hover:bg-white/60 active:bg-white/50 text-emerald-900"
+          className="absolute top-2 right-2 z-20 p-2 rounded-full bg-white/40 hover:bg-white/60 active:bg-white/50 text-emerald-900 shadow-sm"
         >
           <Gear size={18} />
         </button>
 
+
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
           {/* Savings (reserved) */}
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline justify-between pr-10">{/* pr-10 keeps space for the gear */}
             <div className="text-xs text-emerald-950/85">Savings (reserved this period)</div>
             <div className="text-base font-semibold text-emerald-950">
               {formatAmount(savingsReserved)}
             </div>
           </div>
+
 
           {/* Cash on Hand */}
           <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
@@ -308,7 +310,9 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           onClose={() => setShowSettings(false)}
           value={settings}
           onSave={saveSettingsAndRefresh}
+          onAfterImport={() => window.location.reload()}
         />
+
       )}
     </div>
   );
