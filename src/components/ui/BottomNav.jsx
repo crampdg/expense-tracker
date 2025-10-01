@@ -68,7 +68,7 @@ export default function BottomNav({ active, setActive, walletIconSrc }) {
 
   // center wallet FAB styles
   const fabWrapper =
-    "absolute left-1/2 -translate-x-1/2 -translate-y-5 top-0 pointer-events-none"; // positions above the bar
+    "absolute left-1/2 -translate-x-1/2 -translate-y-3 top-0 pointer-events-none"; // positions above the bar
   const fabBtn =
     "pointer-events-auto h-[60px] w-[60px] rounded-full bg-white border-4 border-emerald-700 shadow-xl " +
     "flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-white/60";
