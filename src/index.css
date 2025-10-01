@@ -2,14 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- Base tweaks ---------- */
+html, body, #root { @apply bg-gray-50 text-gray-900; }
+* { -webkit-tap-highlight-color: transparent; }
 
-/* Small helpers */
-.table-head { @apply bg-gray-200 text-xs md:text-sm; }
-.th, .td { @apply border border-gray-300 p-2; }
+/* ---------- Cards ---------- */
+.card { @apply bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6; }
+
+/* ---------- Inputs / Selects ---------- */
+.input {
+  @apply border border-gray-300 rounded-lg p-2 md:p-2.5 text-sm w-full bg-white placeholder-gray-400
+         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+}
+.select {
+  @apply border border-gray-300 rounded-lg p-2 md:p-2.5 text-sm bg-white
+         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+}
+
+/* ---------- Buttons (generic helpers, if you use .btn) ---------- */
+.btn { @apply rounded-xl px-3 py-2 text-sm font-medium shadow-sm transition-colors duration-150; }
+.btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800; }
+.btn-ghost { @apply bg-white text-gray-800 border border-gray-300 hover:bg-gray-50; }
+
+/* ---------- Tables ---------- */
+.table-head { @apply bg-gray-100 text-xs md:text-sm text-gray-700; }
+.th, .td { @apply border border-gray-200 px-3 py-2 md:px-4 md:py-2.5 align-middle; }
+tbody tr:hover > .td { @apply bg-gray-50; }
+tbody tr > .td.text-right { @apply tabular-nums; }
+
+/* ---------- Misc helpers ---------- */
 .label { @apply text-sm text-gray-600; }
-.input { @apply border rounded p-2 text-sm w-full; }
-.select { @apply border rounded p-2 text-sm; }
-.btn { @apply rounded-xl px-3 py-2 text-sm font-medium shadow; }
-.btn-primary { @apply bg-black text-white hover:bg-gray-800; }
-.btn-ghost { @apply bg-white text-gray-800 border hover:bg-gray-50; }
-.card { @apply bg-white rounded-2xl shadow p-4 md:p-6; }
+.sticky-head { @apply sticky top-0 z-10; } /* optional helper for sticky headers */
+
+/* ---------- Print (for html2canvas/pdf + native print) ---------- */
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .no-print { display: none !important; }
+  .card { box-shadow: none !important; border-color: #e5e7eb !important; }
+  #root { background: #fff; }
+}

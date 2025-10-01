@@ -8,24 +8,24 @@ import ExportPDFButton from "./ui/ExportPDFButton.jsx"
 import SharePDFButton from "./ui/SharePDFButton.jsx"
 
 export default function BudgetTab({
-  period,
+  period,            // { type, anchorDate }
   setPeriod,
-  budgets,
+  budgets,           // { inflows: [], outflows: [] }
   setBudgets,
   onClaim,
   transactions,
   periodOffset,
   setPeriodOffset,
 }) {
-  // Safety: ensure arrays exist
-  const b = budgets ?? { inflows: [], outflows: [] }
+  // Safety: normalize props
+  const normBudgets = budgets ?? { inflows: [], outflows: [] }
   const txs = Array.isArray(transactions) ? transactions : []
 
   const [editing, setEditing] = useState(null) // {section, index, isNew}
-  const [history, setHistory] = useState([]) // stack of prior budgets for Undo
+  const [history, setHistory] = useState([])   // stack of prior budgets for Undo
 
   const pushHistory = () =>
-    setHistory((h) => [...h, JSON.parse(JSON.stringify(b))])
+    setHistory((h) => [...h, JSON.parse(JSON.stringify(budgets))])
 
   const undo = () => {
     setHistory((h) => {
@@ -37,14 +37,14 @@ export default function BudgetTab({
   }
 
   const addRow = (section) =>
-    setEditing({ section, index: b[section].length, isNew: true })
+    setEditing({ section, index: normBudgets[section].length, isNew: true })
 
   // --- Period range (start/end) for “Actuals” ---
   const offsetStart = useMemo(() => {
     return getAnchoredPeriodStart(
       period.type,
       period.anchorDate,
-      new Date(), // figure out the “current” period
+      new Date(),
       periodOffset
     )
   }, [period.type, period.anchorDate, periodOffset])
@@ -54,9 +54,9 @@ export default function BudgetTab({
   }, [period.type, offsetStart])
 
   const startISO = offsetStart.toISOString().slice(0, 10)
-  const endISO = offsetEnd.toISOString().slice(0, 10)
+  const endISO   = offsetEnd.toISOString().slice(0, 10)
 
-  // --- Actuals in current period ---
+  // --- Actuals in current (or offset) period ---
   const inflowActuals = useMemo(() => {
     const m = {}
     for (const t of txs) {
@@ -79,14 +79,14 @@ export default function BudgetTab({
     return m
   }, [txs, startISO, endISO])
 
-  // Totals / net
-  const inflowsTotalBudget = useMemo(
-    () => b.inflows.reduce((s, i) => s + Number(i.amount || 0), 0),
-    [b]
+  // Totals / net (budgeted)
+  const inflowsTotalBudget  = useMemo(
+    () => normBudgets.inflows.reduce((s, i) => s + Number(i.amount || 0), 0),
+    [normBudgets]
   )
   const outflowsTotalBudget = useMemo(
-    () => b.outflows.reduce((s, o) => s + Number(o.amount || 0), 0),
-    [b]
+    () => normBudgets.outflows.reduce((s, o) => s + Number(o.amount || 0), 0),
+    [normBudgets]
   )
   const netBudgeted = inflowsTotalBudget - outflowsTotalBudget
 
@@ -110,10 +110,7 @@ export default function BudgetTab({
 
   // Delete row
   const deleteRow = ({ section, index, isNew }) => {
-    if (isNew) {
-      setEditing(null)
-      return // nothing to delete yet
-    }
+    if (isNew) { setEditing(null); return }
     pushHistory()
     setBudgets((prev) => {
       const next = { ...prev }
@@ -130,7 +127,7 @@ export default function BudgetTab({
     // Ensure it exists in budgets first
     saveRow({ section, index, isNew }, form)
     // Use provided values for immediate claim
-    onClaim(section, isNew ? b[section].length : index, {
+    onClaim(section, isNew ? normBudgets[section].length : index, {
       category: (form.category || "").trim() || "Untitled",
       amount: Number(form.amount) || 0,
     })
@@ -140,177 +137,223 @@ export default function BudgetTab({
 
   return (
     <>
-      {/* Wrap the visible content so Export/Share can capture it */}
-      <div id="budget-tab">
-        <Card>
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-center font-bold">Budget</h2>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={undo} disabled={!history.length}>
-                Undo
+      {/* Wrap what we want to export/share */}
+      <div id="budget-tab" className="space-y-4">
+        {/* Header / toolbar */}
+        <Card className="p-4 md:p-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight">Budget</h2>
+              <p className="text-sm text-gray-600">
+                {offsetStart.toDateString()} – {offsetEnd.toDateString()}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="!px-3 !py-2"
+                onClick={undo}
+                disabled={!history.length}
+                title="Undo"
+              >
+                ↩️ Undo
               </Button>
-              <ExportPDFButton targetId="budget-tab" filename="Budget.pdf" />
-              <SharePDFButton targetId="budget-tab" filename="Budget.pdf" />
+              <ExportPDFButton
+                targetId="budget-tab"
+                filename={`${startISO}_to_${endISO}_Budget.pdf`}
+              />
+              <SharePDFButton
+                targetId="budget-tab"
+                filename={`${startISO}_to_${endISO}_Budget.pdf`}
+              />
             </div>
           </div>
 
-          <div className="flex justify-between items-center mb-2">
-            <button
-              className="px-2 py-1 bg-gray-200 rounded"
-              onClick={() => setPeriodOffset((o) => o - 1)}
-            >
-              ← Previous
-            </button>
+          {/* Period navigator */}
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2 items-center">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="!px-3 !py-1.5"
+                onClick={() => setPeriodOffset((o) => o - 1)}
+                title="Previous period"
+              >
+                ← Previous
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="!px-3 !py-1.5"
+                onClick={() => setPeriodOffset((o) => o + 1)}
+                title="Next period"
+              >
+                Next →
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="!px-3 !py-1.5"
+                onClick={() => setPeriodOffset(0)}
+                title="Reset to current period"
+              >
+                Reset
+              </Button>
+            </div>
 
-            <p>
-              Period: {offsetStart.toDateString()} – {offsetEnd.toDateString()}
-            </p>
+            {/* period type + anchor date */}
+            <div className="col-span-2 md:col-span-1 md:justify-self-end">
+              <div className="bg-gray-50 rounded-xl p-2 flex items-center gap-2">
+                <select
+                  value={period.type}
+                  onChange={(e) => setPeriod((p) => ({ ...p, type: e.target.value }))}
+                  className="select !py-1.5"
+                >
+                  <option>Monthly</option>
+                  <option>Biweekly</option>
+                  <option>Weekly</option>
+                  <option>SemiMonthly</option>
+                  <option>Annually</option>
+                </select>
 
-            <button
-              className="px-2 py-1 bg-gray-200 rounded"
-              onClick={() => setPeriodOffset((o) => o + 1)}
-            >
-              Next →
-            </button>
-
-            <button
-              className="ml-2 px-2 py-1 bg-gray-200 rounded"
-              onClick={() => setPeriodOffset(0)}
-            >
-              Reset
-            </button>
-          </div>
-
-          <div className="flex justify-center gap-2 mb-6">
-            <select
-              value={period.type}
-              onChange={(e) =>
-                setPeriod((p) => ({ ...p, type: e.target.value }))
-              }
-              className="select"
-            >
-              <option>Monthly</option>
-              <option>Biweekly</option>
-              <option>Weekly</option>
-              <option>SemiMonthly</option>
-              <option>Annually</option>
-            </select>
-
-            <input
-              type="date"
-              value={period.anchorDate}
-              onChange={(e) =>
-                setPeriod((p) => ({ ...p, anchorDate: e.target.value }))
-              }
-              className="input"
-            />
-          </div>
-
-          {/* Inflows */}
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold">Inflows</h3>
-            <Button variant="ghost" onClick={() => addRow("inflows")}>
-              + Add Inflow
-            </Button>
-          </div>
-          <div className="overflow-x-auto mb-4">
-            <table className="w-full border-collapse text-xs md:text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="th w-2/5">Title</th>
-                  <th className="th text-right">Budget</th>
-                  <th className="th text-right">Actual</th>
-                  <th className="th text-right">Difference</th>
-                </tr>
-              </thead>
-              <tbody>
-                {b.inflows.map((item, idx) => {
-                  const actual = Number(inflowActuals[item.category] || 0)
-                  const budget = Number(item.amount || 0)
-                  const diff = actual - budget // inflow: good if >= 0
-                  return (
-                    <tr
-                      key={`${item.category}-${idx}`}
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() =>
-                        setEditing({
-                          section: "inflows",
-                          index: idx,
-                          isNew: false,
-                        })
-                      }
-                    >
-                      <td className="td">{item.category}</td>
-                      <td className="td text-right">{money(budget)}</td>
-                      <td className="td text-right">{money(actual)}</td>
-                      <td className={`td text-right ${diffClass(diff)}`}>
-                        {money(diff)}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Outflows */}
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold">Outflows</h3>
-            <Button variant="ghost" onClick={() => addRow("outflows")}>
-              + Add Outflow
-            </Button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs md:text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="th w-2/5">Title</th>
-                  <th className="th text-right">Budget</th>
-                  <th className="th text-right">Actual</th>
-                  <th className="th text-right">Difference</th>
-                </tr>
-              </thead>
-              <tbody>
-                {b.outflows.map((item, idx) => {
-                  const actual = Number(outflowActuals[item.category] || 0)
-                  const budget = Number(item.amount || 0)
-                  const diff = budget - actual // outflow: good if >= 0 (remaining)
-                  return (
-                    <tr
-                      key={`${item.category}-${idx}`}
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() =>
-                        setEditing({
-                          section: "outflows",
-                          index: idx,
-                          isNew: false,
-                        })
-                      }
-                    >
-                      <td className="td">{item.category}</td>
-                      <td className="td text-right">{money(budget)}</td>
-                      <td className="td text-right">{money(actual)}</td>
-                      <td className={`td text-right ${diffClass(diff)}`}>
-                        {money(diff)}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Net budgeted spending */}
-          <div className="mt-4 flex justify-end">
-            <div
-              className={`font-semibold ${netBudgeted < 0 ? "text-red-600" : ""}`}
-            >
-              Net Budgeted Spending: {money(netBudgeted)}
+                <input
+                  type="date"
+                  value={period.anchorDate}
+                  onChange={(e) => setPeriod((p) => ({ ...p, anchorDate: e.target.value }))}
+                  className="input !py-1.5"
+                />
+              </div>
             </div>
           </div>
         </Card>
+
+        {/* KPI cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <Card className="text-center">
+            <div className="text-xs text-gray-500">Budgeted Inflows</div>
+            <div className="text-lg font-semibold">{money(inflowsTotalBudget)}</div>
+          </Card>
+          <Card className="text-center">
+            <div className="text-xs text-gray-500">Budgeted Outflows</div>
+            <div className="text-lg font-semibold">{money(outflowsTotalBudget)}</div>
+          </Card>
+          <Card className="text-center md:col-span-1 col-span-2">
+            <div className="text-xs text-gray-500">Net Budgeted</div>
+            <div className={`text-lg font-semibold ${netBudgeted < 0 ? "text-red-600" : "text-green-700"}`}>
+              {money(netBudgeted)}
+            </div>
+          </Card>
+        </div>
+
+        {/* Tables side-by-side on desktop */}
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* Inflows */}
+          <Card className="p-0 overflow-hidden">
+            <div className="flex items-center justify-between p-4 pb-3">
+              <h3 className="font-semibold">Inflows</h3>
+              <Button type="button" variant="ghost" onClick={() => addRow("inflows")}>
+                + Add Inflow
+              </Button>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full border-collapse text-xs md:text-sm">
+                <thead className="table-head sticky top-0 z-10">
+                  <tr>
+                    <th className="th w-2/5">Title</th>
+                    <th className="th text-right">Budget</th>
+                    <th className="th text-right">Actual</th>
+                    <th className="th text-right">Difference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {normBudgets.inflows.map((item, idx) => {
+                    const actual = Number(inflowActuals[item.category] || 0)
+                    const budget = Number(item.amount || 0)
+                    const diff = actual - budget // inflow: good if >= 0
+                    return (
+                      <tr
+                        key={`${item.category}-${idx}`}
+                        className="hover:bg-gray-50 cursor-pointer odd:bg-white even:bg-gray-50/40"
+                        onClick={() => setEditing({ section: "inflows", index: idx, isNew: false })}
+                      >
+                        <td className="td">{item.category}</td>
+                        <td className="td text-right">{money(budget)}</td>
+                        <td className="td text-right">{money(actual)}</td>
+                        <td className={`td text-right ${diffClass(diff)}`}>{money(diff)}</td>
+                      </tr>
+                    )
+                  })}
+                  {normBudgets.inflows.length === 0 && (
+                    <tr>
+                      <td className="td text-center text-gray-500" colSpan={4}>No inflows yet</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Outflows */}
+          <Card className="p-0 overflow-hidden">
+            <div className="flex items-center justify-between p-4 pb-3">
+              <h3 className="font-semibold">Outflows</h3>
+              <Button type="button" variant="ghost" onClick={() => addRow("outflows")}>
+                + Add Outflow
+              </Button>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full border-collapse text-xs md:text-sm">
+                <thead className="table-head sticky top-0 z-10">
+                  <tr>
+                    <th className="th w-2/5">Title</th>
+                    <th className="th text-right">Budget</th>
+                    <th className="th text-right">Actual</th>
+                    <th className="th text-right">Difference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {normBudgets.outflows.map((item, idx) => {
+                    const actual = Number(outflowActuals[item.category] || 0)
+                    const budget = Number(item.amount || 0)
+                    const diff = budget - actual // outflow: good if >= 0 (remaining)
+                    return (
+                      <tr
+                        key={`${item.category}-${idx}`}
+                        className="hover:bg-gray-50 cursor-pointer odd:bg-white even:bg-gray-50/40"
+                        onClick={() => setEditing({ section: "outflows", index: idx, isNew: false })}
+                      >
+                        <td className="td">{item.category}</td>
+                        <td className="td text-right">{money(budget)}</td>
+                        <td className="td text-right">{money(actual)}</td>
+                        <td className={`td text-right ${diffClass(diff)}`}>{money(diff)}</td>
+                      </tr>
+                    )
+                  })}
+                  {normBudgets.outflows.length === 0 && (
+                    <tr>
+                      <td className="td text-center text-gray-500" colSpan={4}>No outflows yet</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        {/* Net budgeted spending (reinforced at bottom for long lists) */}
+        <div className="flex justify-end">
+          <Card className="inline-flex items-center gap-2">
+            <span className="text-sm text-gray-600">Net Budgeted:</span>
+            <span className={`font-semibold ${netBudgeted < 0 ? "text-red-600" : "text-green-700"}`}>
+              {money(netBudgeted)}
+            </span>
+          </Card>
+        </div>
       </div>
 
+      {/* Modal for add/edit */}
       <BudgetEditModal
         open={!!editing}
         onClose={() => setEditing(null)}
@@ -318,7 +361,7 @@ export default function BudgetTab({
           editing
             ? editing.isNew
               ? { category: "", amount: "" }
-              : b[editing.section][editing.index]
+              : normBudgets[editing.section][editing.index]
             : null
         }
         isNew={!!editing?.isNew}
