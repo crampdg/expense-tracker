@@ -210,7 +210,9 @@ function App() {
           <SummaryTab
             transactions={transactions}
             budget={budget}
-            periodEnd={periodEnd}
+            // Pass the SAME period + offset used by BudgetTab so both tabs stay in sync
+            period={periodConfig}
+            periodOffset={periodOffset}
           />
         )}
 
