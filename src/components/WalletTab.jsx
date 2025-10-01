@@ -1,111 +1,184 @@
 import React, { useState, useMemo } from "react";
 import MoneyTimeModal from "./modals/MoneyTimeModal";
+// Period helpers so Suggested Daily has a sensible end date (falls back to end-of-month if config is missing)
+import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils";
 
 export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [showMoneyTime, setShowMoneyTime] = useState(false);
 
-  // ✅ Calculate totals from budget
-  const totalInflows = useMemo(
-    () => (budget?.inflows || []).reduce((sum, i) => sum + (Number(i.amount) || 0), 0),
-    [budget]
-  );
-  const totalOutflowsBudget = useMemo(
-    () => (budget?.outflows || []).reduce((sum, o) => sum + (Number(o.amount) || 0), 0),
-    [budget]
-  );
+  // ---- Safe inputs ----
+  const txs = Array.isArray(transactions) ? transactions : [];
+  const inflowCats = (budget?.inflows || []).map((i) => i.category);
+  const outflowCats = (budget?.outflows || []).map((o) => o.category);
+  const categories = Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean);
 
-  // ✅ Calculate actual spending from transactions
-  const actualOutflows = useMemo(
-    () => transactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
-    [transactions]
-  );
-
-  // ✅ Correct Cash on Hand calculation from transactions
+  // ---- Cash on Hand (minimal + correct) ----
   const cashOnHand = useMemo(() => {
-    return transactions.reduce((sum, t) => {
+    return txs.reduce((sum, t) => {
       const amt = Number(t.amount) || 0;
       if (t.type === "inflow") return sum + amt;
       if (t.type === "expense") return sum - amt;
       return sum;
     }, 0);
-  }, [transactions]);
+  }, [txs]);
 
+  // ---- Suggested Daily: use current anchored period if available; else end of this month ----
+  const { startISO, endISO, daysLeft } = useMemo(() => {
+    let type = "Monthly";
+    let anchor = new Date().toISOString().slice(0, 10);
+    try {
+      const saved = localStorage.getItem("periodConfig");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.type && parsed?.anchorDate) {
+          type = parsed.type;
+          anchor = parsed.anchorDate;
+        }
+      }
+    } catch {}
+    const start = getAnchoredPeriodStart(type, anchor, new Date(), 0);
+    const end = calcPeriodEnd(type, start);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const left = Math.max(1, Math.ceil((end - new Date()) / dayMs));
+    return {
+      startISO: start.toISOString().slice(0, 10),
+      endISO: end.toISOString().slice(0, 10),
+      daysLeft: left,
+    };
+  }, []);
 
-  // ✅ Suggested Daily Spend = remaining cashOnHand / days left in period
-  const suggestedDaily = useMemo(() => {
-    const today = new Date();
-    const end = new Date(budget?.periodEnd || new Date(today.getFullYear(), today.getMonth() + 1, 0));
-    const daysLeft = Math.max(
-      1,
-      Math.ceil((end - today) / (1000 * 60 * 60 * 24))
-    );
+  const suggestedDaily = useMemo(() => cashOnHand / daysLeft, [cashOnHand, daysLeft]);
 
-    return cashOnHand / daysLeft;
-  }, [budget?.periodEnd, cashOnHand]);
-
-
-  // ✅ Show the 3 most recent transactions
+  // ---- Simple, recent list (3 items) ----
   const recentTransactions = useMemo(() => {
-    return [...transactions]
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
+    return [...txs]
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
       .slice(0, 3);
-  }, [transactions]);
+  }, [txs]);
+
+  // ---- Tiny helpers ----
+  const money = (n) =>
+    (isNaN(n) ? 0 : n).toLocaleString(undefined, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    });
+
+  const amountClass = (n) =>
+    n < 0 ? "text-red-600" : n > 0 ? "text-emerald-600" : "text-gray-700";
 
   return (
-    <div className="p-6 flex flex-col items-center space-y-6">
-      {/* Cash on Hand */}
-      <div className="text-center">
-        <h2 className="text-xl font-semibold text-gray-600">Cash on Hand</h2>
-        <p className="text-4xl font-bold mt-2">
-          ${isNaN(cashOnHand) ? "0.00" : cashOnHand.toFixed(2)}
-        </p>
-      </div>
+    <div className="p-4 md:p-6 space-y-6">
+      {/* HERO — friendly green gradient with mascot */}
+      <div className="relative overflow-hidden rounded-3xl shadow-sm border border-emerald-200 bg-gradient-to-b from-emerald-300 to-emerald-500">
+        {/* soft texture bubbles */}
+        <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
+        <div className="absolute -bottom-16 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
 
-      {/* Suggested Daily Spend */}
-      <div className="text-center">
-        <h3 className="text-lg font-medium text-gray-600">
-          Suggested Daily Spend
-        </h3>
-        <p className="text-2xl text-green-600 font-bold">
-          ${isNaN(suggestedDaily) ? "0.00" : suggestedDaily.toFixed(2)}
-        </p>
-      </div>
+        <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
+          <div className="flex items-start gap-4">
+            {/* Mascot placeholder (use your /public/icon.png; replace later if needed) */}
+            <div className="shrink-0">
+              <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/90 border border-emerald-200 shadow-sm overflow-hidden flex items-center justify-center">
+                {/* Placeholder image — swap later if you want a different art */}
+                <img
+                  src="/icon.png"
+                  alt="Blehxpenses Mascot"
+                  className="w-14 h-14 md:w-16 md:h-16 object-contain"
+                />
+              </div>
+            </div>
 
-
-      {/* Money Time Button */}
-      <button
-        onClick={() => setShowMoneyTime(true)}
-        className="bg-yellow-400 text-black font-bold text-lg px-6 py-3 rounded-full shadow-lg hover:bg-yellow-300 transition"
-      >
-        MONEY TIME! 💸
-      </button>
-
-      {/* Recent Transactions */}
-      <div className="w-full mt-6">
-        <h4 className="text-md font-semibold text-gray-700 mb-2 text-center">
-          Recent Transactions
-        </h4>
-        {recentTransactions.length > 0 ? (
-          <ul className="space-y-2">
-            {recentTransactions.map((t, idx) => (
-              <li
-                key={idx}
-                className="flex justify-between bg-gray-100 rounded-lg p-2 shadow-sm"
+            {/* Copy */}
+            <div className="grow">
+              <div className="text-sm text-emerald-950/90">Cash on Hand</div>
+              <div
+                className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${
+                  cashOnHand < 0 ? "text-red-700" : "text-emerald-900"
+                }`}
+                aria-live="polite"
               >
-                <span className="text-sm">{t.category || "Uncategorized"}</span>
-                <span
-                  className={`text-sm font-medium ${
-                    t.type === "expense" ? "text-red-600" : "text-green-600"
-                  }`}
-                >
-                  {t.type === "expense" ? "-" : "+"}${(Number(t.amount) || 0).toFixed(2)}
-                </span>
+                {money(cashOnHand)}
+              </div>
 
-              </li>
-            ))}
+              <div className="mt-3 flex items-baseline gap-2">
+                <div className="text-sm text-emerald-950/80">Suggested Daily</div>
+                <div className={`text-2xl font-bold ${amountClass(suggestedDaily)}`}>
+                  {money(suggestedDaily)}
+                </div>
+              </div>
+
+              {/* Tiny period hint */}
+              <div className="mt-1 text-xs text-emerald-950/70">
+                through <span className="font-medium">{endISO}</span>
+              </div>
+
+              {/* CTA */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowMoneyTime(true)}
+                  type="button"
+                  className="inline-flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:bg-yellow-300
+                             text-yellow-900 font-extrabold tracking-wide px-5 py-2.5 rounded-full shadow
+                             border border-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400"
+                >
+                  <span>💰</span>
+                  <span>MONEY TIME!</span>
+                  <span className="text-lg">✨</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent — ultra minimal */}
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="px-4 py-3 flex items-center justify-between">
+          <div className="text-sm font-semibold text-gray-800">Recent Transactions</div>
+          <div className="text-xs text-gray-500">Period: {startISO} → {endISO}</div>
+        </div>
+
+        {recentTransactions.length > 0 ? (
+          <ul className="divide-y divide-gray-200">
+            {recentTransactions.map((t, idx) => {
+              const amt = Number(t.amount) || 0;
+              const isExpense = t.type === "expense";
+              return (
+                <li key={t.id ?? `${t.category}-${t.date}-${idx}`} className="px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center justify-center w-6 h-6 rounded-full border text-xs ${
+                          isExpense
+                            ? "bg-red-50 text-red-700 border-red-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {isExpense ? "–" : "+"}
+                      </span>
+                      <span className="truncate text-sm font-medium">
+                        {t.category || "Uncategorized"}
+                      </span>
+                    </div>
+                    <div
+                      className={`text-sm font-semibold tabular-nums ${
+                        isExpense ? "text-red-600" : "text-emerald-700"
+                      }`}
+                    >
+                      {isExpense ? "-" : "+"}
+                      {money(amt)}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : (
-          <p className="text-sm text-gray-500 text-center">No recent spends</p>
+          <div className="px-4 py-6 text-center text-sm text-gray-500">
+            No recent spends
+          </div>
         )}
       </div>
 
@@ -114,14 +187,10 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         <MoneyTimeModal
           open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
-          onSave={onAddTransaction}          // ✅ match expected prop
-          categories={[
-            ...budget.inflows.map(i => i.category),
-            ...budget.outflows.map(o => o.category),
-          ]}
+          onSave={onAddTransaction}
+          categories={categories}
         />
       )}
-
     </div>
   );
 }
