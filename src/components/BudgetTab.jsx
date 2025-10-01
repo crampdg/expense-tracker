@@ -4,12 +4,14 @@ import Button from './ui/Button.jsx'
 import BudgetEditModal from './modals/BudgetEditModal.jsx'
 import { useMemo, useState } from 'react'
 import { money } from '../utils/format.js'
+import ExportPDFButton from "./ui/ExportPDFButton.jsx"
+import SharePDFButton from "./ui/SharePDFButton.jsx"
 
 export default function BudgetTab({
   period, setPeriod, periodEnd,
   budgets, setBudgets,
   onClaim,
-  transactions, // <-- pass from App.jsx (see step 3)
+  transactions, // <-- pass from App.jsx
   periodOffset, setPeriodOffset
 }) {
   const [editing, setEditing] = useState(null) // {section, index, isNew}
@@ -40,8 +42,6 @@ export default function BudgetTab({
   const offsetEnd = useMemo(() => {
     return calcPeriodEnd(period.type, offsetStart)
   }, [period.type, offsetStart])
-
-
 
   const startISO = offsetStart.toISOString().slice(0, 10)
   const endISO   = offsetEnd.toISOString().slice(0, 10)
@@ -118,10 +118,14 @@ export default function BudgetTab({
 
   return (
     <>
-      <Card>
+      <Card id="budget-tab">
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-center font-bold">Budget</h2>
-          <Button variant="ghost" onClick={undo} disabled={!history.length}>Undo</Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={undo} disabled={!history.length}>Undo</Button>
+            <ExportPDFButton targetId="budget-tab" filename="Budget.pdf" />
+            <SharePDFButton targetId="budget-tab" filename="Budget.pdf" />
+          </div>
         </div>
 
         <div className="flex justify-between items-center mb-2">
@@ -149,7 +153,6 @@ export default function BudgetTab({
           >
             Reset
           </button>
-
         </div>
 
         <div className="flex justify-center gap-2 mb-6">
@@ -171,7 +174,6 @@ export default function BudgetTab({
             onChange={e => setPeriod(p => ({ ...p, anchorDate: e.target.value }))}
             className="input"
           />
-
         </div>
 
         {/* Inflows */}
