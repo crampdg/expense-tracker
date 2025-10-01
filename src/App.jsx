@@ -171,6 +171,48 @@ function App() {
     })
   }
 
+  // -- Bulk rename matching transactions by section/name/scope --------------
+  // Called from BudgetTab when a row's title is renamed with scope A/B/C
+  // O(n) over transactions; only sets state if something actually changed.
+  const onBulkRenameTransactions = ({
+    section,          // 'inflows' | 'outflows'
+    oldName,          // previous row name (as typed)
+    newName,          // new row name (as typed)
+    scope,            // 'all' | 'period'
+    startISO,         // inclusive 'YYYY-MM-DD' for current period
+    endISO            // inclusive 'YYYY-MM-DD' for current period
+  }) => {
+    const norm = (s) => (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const matchType = section === 'inflows' ? 'inflow' : 'expense';
+    const oldKey = norm(oldName);
+    const newLabel = (newName ?? '').trim();
+    if (!newLabel || !oldKey) return;
+
+    let changed = false;
+    setTransactions(prev => {
+      const next = prev.map(tx => {
+        // Section/type must match and category must normalize-equal
+        if (tx.type !== matchType) return tx;
+        if (!tx.category || norm(tx.category) !== oldKey) return tx;
+
+        // Scope 'period' limits by date (inclusive)
+        if (scope === 'period') {
+          const d = tx.date;
+          if (!(d >= startISO && d <= endISO)) return tx;
+        }
+
+        // If already exactly the target label (same casing), skip
+        if (tx.category === newLabel) return tx;
+
+        changed = true;
+        return { ...tx, category: newLabel };
+      });
+      // Only commit if a change occurred (avoids unnecessary re-renders)
+      return changed ? next : prev;
+    });
+  };
+
+
   const handleClaimBudget = (section, index, payload) => {
     console.log("Claiming budget row:", section, index, payload)
   }
@@ -195,9 +237,10 @@ function App() {
             transactions={transactions}
             periodOffset={periodOffset}
             setPeriodOffset={setPeriodOffset}
+            onBulkRenameTransactions={onBulkRenameTransactions}
           />
-
         )}
+
         {activeTab === 'detailed' && (
           <DetailedTab
             transactions={transactions}
