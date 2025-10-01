@@ -1,4 +1,5 @@
-export default function Modal({ open, onClose, children, widthClass='w-11/12 max-w-md' }) {
+export default function Modal({ open, onClose, children, widthClass='w-11/12 max-w-md', bodyClass='' }) {
+
   if (!open) return null
 
   const handleOverlayClick = (e) => {
@@ -14,11 +15,12 @@ export default function Modal({ open, onClose, children, widthClass='w-11/12 max
       onClick={handleOverlayClick}
       onTouchStart={handleOverlayClick}
     >
-      <div
-        className={`bg-white rounded-2xl shadow p-4 ${widthClass}`}
-      >
-        {children}
+      <div className={`bg-white rounded-2xl shadow p-4 ${widthClass}`}>
+        <div className={bodyClass}>
+          {children}
+        </div>
       </div>
+
     </div>
   )
 }

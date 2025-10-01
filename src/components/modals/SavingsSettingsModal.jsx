@@ -175,7 +175,18 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal
+        open={open}
+        onClose={onClose}
+        bodyClass="
+            max-h-[min(80vh,calc(100dvh-140px))]
+            overflow-y-auto
+            pr-1
+            pb-[calc(env(safe-area-inset-bottom)+88px)]
+            overscroll-contain
+        "
+        >
+
       <div className="p-4 md:p-5">
         <h3 className="text-lg font-semibold">Savings & Daily Settings</h3>
         <p className="mt-1 text-sm text-gray-600">
