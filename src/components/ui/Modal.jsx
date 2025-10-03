@@ -8,6 +8,23 @@ export default function Modal({ open, onClose, children, widthClass='w-11/12 max
       onClose()
     }
   }
+  useEffect(() => {
+    const onKey = (e) => {
+      const tag = e.target.tagName;
+      const isEditable = e.target.isContentEditable;
+      if (isEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return; // don’t block typing
+      }
+      if (e.key === 'Escape') onClose?.();
+      // Only prevent default for scroll/navigation keys when not typing:
+      if ([' ', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey, { passive: false });
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
 
   return (
     <div
@@ -23,4 +40,5 @@ export default function Modal({ open, onClose, children, widthClass='w-11/12 max
 
     </div>
   )
+
 }

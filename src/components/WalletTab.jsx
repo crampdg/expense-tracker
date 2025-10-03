@@ -200,14 +200,18 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     // Normalize type robustly: force inflow when amount > 0 (even if UI said "expense")
     const rawType = (tx.type || "").toString().toLowerCase();
     const amtNum = Number(tx.amount);
-    const positive = Number.isFinite(amtNum) && amtNum > 0;
 
-    // If UI already marked it as inflow/income, keep it; else force by sign
+    // Respect the UI selection when it’s valid.
+    // Only infer when the type is unknown.
     if (rawType === "inflow" || rawType === "income") {
       tx.type = "inflow";
+    } else if (rawType === "expense" || rawType === "outflow") {
+      tx.type = "expense";
     } else {
-      tx.type = positive ? "inflow" : "expense";
+      // Fallback inference by sign (optional)
+      tx.type = Number.isFinite(amtNum) && amtNum < 0 ? "expense" : "inflow";
     }
+
     
 
 

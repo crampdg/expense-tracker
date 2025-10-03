@@ -40,7 +40,14 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
   return (
     <Modal open={open} onClose={onClose}>
       <h3 className="font-semibold mb-3">MONEY TIME! 💸</h3>
-      <div className="grid gap-3">
+      <div
+        className="grid gap-3"
+        onKeyDownCapture={(e) => {
+          // Don’t let global key handlers swallow typing inside the modal
+          e.stopPropagation();
+        }}
+      >
+
         <select
           className="input"
           value={form.type}
@@ -56,7 +63,9 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
           placeholder="Amount"
           value={form.amount}
           onChange={e => handleChange('amount', e.target.value)}
+          autoFocus
         />
+
 
         <input
           type="date"
