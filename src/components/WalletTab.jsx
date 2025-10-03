@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import MoneyTimeModal from "./modals/MoneyTimeModal";
 import SavingsSettingsModal from "./modals/SavingsSettingsModal.jsx";
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils";
