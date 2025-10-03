@@ -118,32 +118,41 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }, [txs, savingsLabel]);
 
   // ---- Wrap inflows to auto-save ----
+  // ---- Wrap inflows to auto-save (ensure inflow commits first) ----
   const handleAddTransaction = (t) => {
     if (!onAddTransaction) return;
-    const inflowId = onAddTransaction(t);
 
-    if (t?.type === "inflow") {
+    // 1) Add the original inflow (clone to avoid mutation side effects)
+    const inflow = { ...t };
+    const inflowId = onAddTransaction(inflow);
+
+    // 2) If it’s an inflow, compute and add the paired Savings outflow on next tick
+    if (inflow?.type === "inflow") {
       const pct = clamp01(settings.autoSavePercent || 0);
       const fixed = Math.max(0, Number(settings.autoSaveFixed) || 0);
-      const inflowAmt = Math.max(0, Number(t.amount) || 0);
+      const inflowAmt = Math.max(0, Number(inflow.amount) || 0);
 
       let saveAmt = inflowAmt * pct + fixed;
-      if (!Number.isFinite(saveAmt) || saveAmt <= 0) return;
-      saveAmt = Math.min(saveAmt, inflowAmt);
+      if (Number.isFinite(saveAmt) && saveAmt > 0) {
+        saveAmt = Math.min(saveAmt, inflowAmt);
 
-      const outTx = {
-        id: undefined,
-        date: t.date || new Date().toISOString().slice(0,10),
-        type: "expense",
-        category: savingsLabel || "Savings",
-        amount: saveAmt,
-        note: (t.note ? `${t.note} → auto-saved` : "Auto-saved from inflow"),
-        meta: { autoSaved: true, pairOf: inflowId || t.id || null, sourceCategory: t.category || null },
-      };
-      onAddTransaction(outTx);
+        const outTx = {
+          id: undefined,
+          date: inflow.date || new Date().toISOString().slice(0,10),
+          type: "expense",
+          category: savingsLabel || "Savings",
+          amount: saveAmt,
+          note: (inflow.note ? `${inflow.note} → auto-saved` : "Auto-saved from inflow"),
+          meta: { autoSaved: true, pairOf: inflowId || inflow.id || null, sourceCategory: inflow.category || null },
+        };
+
+        // Defer the second add to avoid state replacement collisions
+        setTimeout(() => onAddTransaction(outTx), 0);
+      }
     }
     return inflowId;
   };
+
 
 
   // ---- Planned & actuals this period ----
