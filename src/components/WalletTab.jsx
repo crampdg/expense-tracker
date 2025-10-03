@@ -149,6 +149,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     } else {
       tx.type = positive ? "inflow" : "expense";
     }
+    
 
 
     // Ensure TX has an id so paired record can reference it even if the store doesn't return one
@@ -158,7 +159,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     const committedId = onAddTransaction(tx) ?? tx.id;
 
     // 2) If this is an inflow, compute and add the Savings outflow on next tick
-    if (isClearlyInflow) {
+    if (tx.type === "inflow") {
       const pct = Math.max(0, Math.min(1, Number(settings.autoSavePercent)));
       const fixed = Math.max(0, Number(settings.autoSaveFixed));
       const inflowAmt = Math.max(0, Number(tx.amount) || 0);
