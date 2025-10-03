@@ -8,3 +8,4 @@ try{ const raw = localStorage.getItem(key); return raw? JSON.parse(raw) : initia
 useEffect(()=>{ try{ localStorage.setItem(key, JSON.stringify(state)) }catch{} }, [key, state])
 return [state, setState]
 }
+

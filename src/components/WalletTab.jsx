@@ -4,39 +4,64 @@ import SavingsSettingsModal from "./modals/SavingsSettingsModal.jsx";
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils";
 import { Settings as Gear } from "lucide-react";
 
-/** helpers */
-function clamp01(x){ return Math.min(0.99, Math.max(0, x)); }
+/* ---------- settings I/O (new keys, backward-friendly) ---------- */
+function clamp01(x){ return Math.min(0.99, Math.max(0, Number(x)||0)); }
+function pickNum(k, d=0){ try{ const v = Number(localStorage.getItem(k)); return Number.isFinite(v) ? Math.max(0,v) : d; }catch{ return d; } }
+function pickBool(k, d=false){ try{ return localStorage.getItem(k) === "true" ? true : (localStorage.getItem(k)==="false" ? false : d); }catch{ return d; } }
 function readSettings() {
-  const pickNum = (k, d=0) => {
-    try { const v = Number(localStorage.getItem(k)); return Number.isFinite(v) ? Math.max(0, v) : d; } catch { return d; }
-  };
-  const pickPct = (k, d=0) => clamp01(pickNum(k, d));
+  // New model
+  const reserveDaily = pickNum("reserveDaily", 0);
+  const reserveOnMonthStart = pickBool("reserveOnMonthStart", false);
+  const savingsGoal = pickNum("savingsGoal", 0);
+  const suggestedDailyBufferPct = clamp01(pickNum("suggestedDailyBufferPct", 0.10));
+
+  // (legacy fallback; we don’t show these in UI anymore)
+  const legacyRate = clamp01(pickNum("savingsRate", 0));
+  const legacyFixed = pickNum("fixedMonthlySavings", 0);
+  const includeOneOffInflowsPct = clamp01(pickNum("includeOneOffInflowsPct", 0.50));
+  const sinkingAccrualMonthly = pickNum("sinkingAccrualMonthly", 0);
+
   return {
-    savingsRate:              pickPct("savingsRate", 0.10),
-    fixedMonthlySavings:      pickNum("fixedMonthlySavings", 0),
-    includeOneOffInflowsPct:  pickPct("includeOneOffInflowsPct", 0.50),
-    sinkingAccrualMonthly:    pickNum("sinkingAccrualMonthly", 0),
-    suggestedDailyBufferPct:  pickPct("suggestedDailyBufferPct", 0.10),
+    // new
+    reserveDaily, reserveOnMonthStart, savingsGoal, suggestedDailyBufferPct,
+    // legacy (read-only)
+    legacyRate, legacyFixed, includeOneOffInflowsPct, sinkingAccrualMonthly,
   };
 }
 function saveSettings(s) {
   try {
-    localStorage.setItem("savingsRate", String(clamp01(s.savingsRate)));
-    localStorage.setItem("fixedMonthlySavings", String(Math.max(0, s.fixedMonthlySavings)));
-    localStorage.setItem("includeOneOffInflowsPct", String(clamp01(s.includeOneOffInflowsPct)));
-    localStorage.setItem("sinkingAccrualMonthly", String(Math.max(0, s.sinkingAccrualMonthly)));
-    localStorage.setItem("suggestedDailyBufferPct", String(clamp01(s.suggestedDailyBufferPct)));
+    localStorage.setItem("reserveDaily", String(Math.max(0, s.reserveDaily||0)));
+    localStorage.setItem("reserveOnMonthStart", String(!!s.reserveOnMonthStart));
+    localStorage.setItem("savingsGoal", String(Math.max(0, s.savingsGoal||0)));
+    localStorage.setItem("suggestedDailyBufferPct", String(clamp01(s.suggestedDailyBufferPct ?? 0.10)));
   } catch {}
 }
-function periodMonthsFactor(t) {
-  switch (t) {
-    case "Monthly": return 1;
-    case "SemiMonthly": return 0.5;
-    case "Biweekly": return 0.5;
-    case "Weekly": return 0.25;
-    case "Annually": return 12;
-    default: return 1;
-  }
+
+/* ---------- small helpers ---------- */
+function currency(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "0.00";
+  const sign = num < 0 ? "-" : "";
+  const abs = Math.abs(num);
+  return sign + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+const amtClass = (n) => n < 0 ? "text-red-600" : n > 0 ? "text-emerald-700" : "text-gray-700";
+
+/* ---------- compute reserved for this period ---------- */
+function periodSpan(start, end){ // inclusive days
+  const d0 = new Date(start), d1 = new Date(end);
+  const ms = 24*60*60*1000;
+  return Math.max(1, Math.round((Date.UTC(d1.getFullYear(),d1.getMonth(),d1.getDate()) - Date.UTC(d0.getFullYear(),d0.getMonth(),d0.getDate()))/ms) + 1);
+}
+function daysSoFar(start, end, today=new Date()){
+  const d0 = new Date(start), d1 = new Date(end);
+  const ms = 24*60*60*1000;
+  const t = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const a = new Date(Date.UTC(d0.getFullYear(), d0.getMonth(), d0.getDate()));
+  const b = new Date(Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate()));
+  if (t < a) return 0;
+  if (t > b) return periodSpan(start,end);
+  return Math.round((t - a)/ms) + 1;
 }
 
 export default function WalletTab({ budget, transactions, onAddTransaction }) {
@@ -44,11 +69,29 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState(readSettings());
 
-  // ---- Safe inputs ----
+  // ---- Inputs ----
   const txs = Array.isArray(transactions) ? transactions : [];
   const inflowCats = (budget?.inflows || []).map((i) => i.category);
   const outflowCats = (budget?.outflows || []).map((o) => o.category);
   const categories = Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean);
+
+  // ---- Period window ----
+  const { startISO, endISO, daysLeft } = useMemo(() => {
+    let type = "Monthly";
+    let anchor = new Date().toISOString().slice(0, 10);
+    try {
+      const saved = localStorage.getItem("periodConfig");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.type && parsed?.anchorDate) { type = parsed.type; anchor = parsed.anchorDate; }
+      }
+    } catch {}
+    const start = getAnchoredPeriodStart(type, anchor, new Date(), 0);
+    const end = calcPeriodEnd(type, start);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const left = Math.max(1, Math.ceil((end - new Date()) / dayMs));
+    return { startISO: start.toISOString().slice(0, 10), endISO: end.toISOString().slice(0, 10), daysLeft: left };
+  }, []);
 
   // ---- Cash on Hand ----
   const cashOnHand = useMemo(() => {
@@ -60,123 +103,56 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     }, 0);
   }, [txs]);
 
-  // ---- Period window ----
-  const { startISO, endISO, daysLeft, periodType } = useMemo(() => {
-    let type = "Monthly";
-    let anchor = new Date().toISOString().slice(0, 10);
-    try {
-      const saved = localStorage.getItem("periodConfig");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.type && parsed?.anchorDate) {
-          type = parsed.type;
-          anchor = parsed.anchorDate;
-        }
-      }
-    } catch {}
-    const start = getAnchoredPeriodStart(type, anchor, new Date(), 0);
-    const end = calcPeriodEnd(type, start);
-    const dayMs = 24 * 60 * 60 * 1000;
-    const left = Math.max(1, Math.ceil((end - new Date()) / dayMs));
-    return {
-      startISO: start.toISOString().slice(0, 10),
-      endISO: end.toISOString().slice(0, 10),
-      daysLeft: left,
-      periodType: type,
-    };
-  }, []);
+  // ---- Planned & actuals this period ----
+  const plannedInflows = useMemo(() => (budget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0), [budget]);
+  const plannedOutflows = useMemo(() => (budget?.outflows || []).reduce((s, o) => s + (Number(o.amount) || 0), 0), [budget]);
 
-  // ---- Budget plan totals ----
-  const plannedInflows = useMemo(
-    () => (budget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0),
-    [budget]
-  );
-  const plannedOutflows = useMemo(
-    () => (budget?.outflows || []).reduce((s, o) => s + (Number(o.amount) || 0), 0),
-    [budget]
-  );
-
-  // ---- Actuals this period ----
   const { actualInflows, actualOutflows } = useMemo(() => {
     let inflow = 0, outflow = 0;
     for (const t of txs) {
       const d = t.date || "";
       if (d >= startISO && d <= endISO) {
         const amt = Number(t.amount) || 0;
-        if (t.type === "inflow") inflow += amt;
-        else if (t.type === "expense") outflow += amt;
+        if (t.type === "inflow") inflow += amt; else if (t.type === "expense") outflow += amt;
       }
     }
     return { actualInflows: inflow, actualOutflows: outflow };
   }, [txs, startISO, endISO]);
 
-  // ---- Remaining planned amounts ----
   const remainingPlannedInflows = Math.max(0, plannedInflows - actualInflows);
   const remainingPlannedOutflows = Math.max(0, plannedOutflows - actualOutflows);
-
-  // ---- Projected end cash ----
   const projectedEndCash = cashOnHand + remainingPlannedInflows - remainingPlannedOutflows;
 
-  // ---- Savings & sinking (this period) from settings ----
-  const projectedIncome =
-    actualInflows + remainingPlannedInflows * settings.includeOneOffInflowsPct;
-  const savingsFirst = Math.max(settings.fixedMonthlySavings, projectedIncome * settings.savingsRate);
-  const sinkThisPeriod = settings.sinkingAccrualMonthly * periodMonthsFactor(periodType);
-  const savingsReserved = Math.max(0, savingsFirst + sinkThisPeriod);
+  // ---- Savings (new accrual model) ----
+  const periodDays = periodSpan(startISO, endISO);
+  const accruedDays = daysSoFar(startISO, endISO);
+  const periodReserveTotal = (settings.reserveDaily || 0) * periodDays;
+  const savingsReserved = settings.reserveOnMonthStart ? periodReserveTotal : (settings.reserveDaily || 0) * accruedDays;
 
-  // ---- Suggested Daily (smart) ----
-  const hasAnyBudget =
-    ((budget?.inflows?.length || 0) + (budget?.outflows?.length || 0)) > 0;
-
+  // ---- Suggested Daily ----
+  const hasAnyBudget = ((budget?.inflows?.length || 0) + (budget?.outflows?.length || 0)) > 0;
   const suggestedDaily = useMemo(() => {
     const simple = cashOnHand / daysLeft;
     if (!hasAnyBudget) return Math.max(0, simple);
     const adjustedProjectedEnd = projectedEndCash - savingsReserved;
-    const buffered = (adjustedProjectedEnd * (1 - settings.suggestedDailyBufferPct)) / daysLeft;
+    const buffered = (adjustedProjectedEnd * (1 - (settings.suggestedDailyBufferPct ?? 0.10))) / daysLeft;
     return Math.max(0, buffered);
-  }, [
-    cashOnHand,
-    daysLeft,
-    hasAnyBudget,
-    projectedEndCash,
-    savingsReserved,
-    settings.suggestedDailyBufferPct,
-  ]);
+  }, [cashOnHand, daysLeft, hasAnyBudget, projectedEndCash, savingsReserved, settings.suggestedDailyBufferPct]);
 
   // ---- Recent list ----
-  const recentTransactions = useMemo(() => {
-    return [...txs]
-      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
-      .slice(0, 3);
-  }, [txs]);
+  const recentTransactions = useMemo(() => [...txs].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,3), [txs]);
 
-  // ---- Formatting ----
-  const formatAmount = (n) => {
-    const num = Number(n);
-    if (!Number.isFinite(num)) return "0.00";
-    const sign = num < 0 ? "-" : "";
-    const abs = Math.abs(num);
-    return sign + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-  const amountClass = (n) =>
-    n < 0 ? "text-red-600" : n > 0 ? "text-emerald-700" : "text-gray-700";
-
-  // ---- Handlers ----
+  // ---- UI handlers ----
   const openSettings = () => setShowSettings(true);
-  const saveSettingsAndRefresh = (newVals) => {
-    saveSettings(newVals);
-    setSettings(newVals); // trigger recompute immediately
-  };
+  const saveSettingsAndRefresh = (vals) => { saveSettings(vals); setSettings(vals); };
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* HERO */}
       <div className="relative overflow-hidden rounded-3xl shadow-sm border border-emerald-200 bg-gradient-to-b from-emerald-300 to-emerald-500">
-        {/* bubbles */}
         <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
         <div className="absolute -bottom-16 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
 
-        {/* tiny gear – top-right */}
         <button
           type="button"
           onClick={openSettings}
@@ -187,50 +163,36 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           <Gear size={18} />
         </button>
 
-
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
           {/* Savings (reserved) */}
-          <div className="flex items-baseline justify-between pr-10">{/* pr-10 keeps space for the gear */}
+          <div className="flex items-baseline justify-between pr-10">
             <div className="text-xs text-emerald-950/85">Savings (reserved this period)</div>
-            <div className="text-base font-semibold text-emerald-950">
-              {formatAmount(savingsReserved)}
-            </div>
+            <div className="text-base font-semibold text-emerald-950">{currency(savingsReserved)}</div>
           </div>
 
+          {/* Optional goal progress (shown only if a goal is set) */}
+          {Number(settings.savingsGoal) > 0 && (
+            <div className="mt-1 text-[11px] text-emerald-950/80">
+              Goal {currency(settings.savingsGoal)} • {(Math.min(1, savingsReserved / settings.savingsGoal) * 100).toFixed(0)}%
+            </div>
+          )}
 
           {/* Cash on Hand */}
           <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
-          <div
-            className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${
-              cashOnHand < 0 ? "text-red-700" : "text-emerald-900"
-            }`}
-            aria-live="polite"
-          >
-            {formatAmount(cashOnHand)}
+          <div className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${cashOnHand < 0 ? "text-red-700" : "text-emerald-900"}`} aria-live="polite">
+            {currency(cashOnHand)}
           </div>
 
           {/* Suggested Daily */}
           <div className="mt-3 flex items-baseline gap-2">
-            <div
-              className="text-sm text-emerald-950/80"
-              title={
-                hasAnyBudget
-                  ? "After planned bills/inflows, savings & sinking funds, plus safety buffer"
-                  : "Cash ÷ days left"
-              }
-            >
+            <div className="text-sm text-emerald-950/80" title={hasAnyBudget ? "After planned bills, savings pot & buffer" : "Cash ÷ days left"}>
               Suggested Daily
             </div>
-            <div className={`text-2xl font-bold ${amountClass(suggestedDaily)}`}>
-              {formatAmount(suggestedDaily)}
-            </div>
+            <div className={`text-2xl font-bold ${amtClass(suggestedDaily)}`}>{currency(suggestedDaily)}</div>
           </div>
 
-          <div className="mt-1 text-xs text-emerald-950/70">
-            through <span className="font-medium">{endISO}</span>
-          </div>
+          <div className="mt-1 text-xs text-emerald-950/70">through <span className="font-medium">{endISO}</span></div>
 
-          {/* CTA */}
           <div className="mt-4">
             <button
               onClick={() => setShowMoneyTime(true)}
@@ -239,9 +201,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                          text-yellow-900 font-extrabold tracking-wide px-5 py-2.5 rounded-full shadow
                          border border-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400"
             >
-              <span>💰</span>
-              <span>MONEY TIME!</span>
-              <span className="text-lg">✨</span>
+              <span>💰</span><span>MONEY TIME!</span><span className="text-lg">✨</span>
             </button>
           </div>
         </div>
@@ -253,7 +213,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           <div className="text-sm font-semibold text-gray-800">Recent Transactions</div>
           <div className="text-xs text-gray-500">Period: {startISO} → {endISO}</div>
         </div>
-
         {recentTransactions.length > 0 ? (
           <ul className="divide-y divide-gray-200">
             {recentTransactions.map((t, idx) => {
@@ -263,27 +222,13 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                 <li key={t.id ?? `${t.category}-${t.date}-${idx}`} className="px-4 py-3">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center justify-center w-6 h-6 rounded-full border text-xs ${
-                          isExpense
-                            ? "bg-red-50 text-red-700 border-red-200"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        }`}
-                        aria-hidden="true"
-                      >
+                      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full border text-xs ${isExpense ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`} aria-hidden="true">
                         {isExpense ? "–" : "+"}
                       </span>
-                      <span className="truncate text-sm font-medium">
-                        {t.category || "Uncategorized"}
-                      </span>
+                      <span className="truncate text-sm font-medium">{t.category || "Uncategorized"}</span>
                     </div>
-                    <div
-                      className={`text-sm font-semibold tabular-nums ${
-                        isExpense ? "text-red-600" : "text-emerald-700"
-                      }`}
-                    >
-                      {isExpense ? "-" : "+"}
-                      {formatAmount(amt)}
+                    <div className={`text-sm font-semibold tabular-nums ${isExpense ? "text-red-600" : "text-emerald-700"}`}>
+                      {isExpense ? "-" : "+"}{currency(amt)}
                     </div>
                   </div>
                 </li>
@@ -312,7 +257,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           onSave={saveSettingsAndRefresh}
           onAfterImport={() => window.location.reload()}
         />
-
       )}
     </div>
   );
