@@ -117,40 +117,53 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     return sum;
   }, [txs, savingsLabel]);
 
-  // ---- Wrap inflows to auto-save ----
-  // ---- Wrap inflows to auto-save (ensure inflow commits first) ----
+  // ---- Wrap inflows to auto-save (robust inflow detection) ----
   const handleAddTransaction = (t) => {
     if (!onAddTransaction) return;
 
-    // 1) Add the original inflow (clone to avoid mutation side effects)
-    const inflow = { ...t };
-    const inflowId = onAddTransaction(inflow);
+    const tx = { ...t };
 
-    // 2) If it’s an inflow, compute and add the paired Savings outflow on next tick
-    if (inflow?.type === "inflow") {
-      const pct = clamp01(settings.autoSavePercent || 0);
-      const fixed = Math.max(0, Number(settings.autoSaveFixed) || 0);
-      const inflowAmt = Math.max(0, Number(inflow.amount) || 0);
+    // Normalize type: treat "income" or positive amount as inflow
+    const rawType = (tx.type || "").toString().toLowerCase();
+    const amtNum = Number(tx.amount);
+    const isClearlyInflow = rawType === "inflow" || rawType === "income" || (Number.isFinite(amtNum) && amtNum > 0);
 
-      let saveAmt = inflowAmt * pct + fixed;
+    // If type is missing/ambiguous, set based on sign
+    if (!rawType) {
+      tx.type = isClearlyInflow ? "inflow" : "expense";
+    }
+
+    // Ensure TX has an id so paired record can reference it even if the store doesn't return one
+    if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // 1) Commit the original transaction first
+    const committedId = onAddTransaction(tx) ?? tx.id;
+
+    // 2) If this is an inflow, compute and add the Savings outflow on next tick
+    if (isClearlyInflow) {
+      const pct = Math.max(0, Math.min(1, Number(settings.autoSavePercent)));
+      const fixed = Math.max(0, Number(settings.autoSaveFixed));
+      const inflowAmt = Math.max(0, Number(tx.amount) || 0);
+
+      let saveAmt = inflowAmt * (Number.isFinite(pct) ? pct : 0) + (Number.isFinite(fixed) ? fixed : 0);
       if (Number.isFinite(saveAmt) && saveAmt > 0) {
         saveAmt = Math.min(saveAmt, inflowAmt);
 
         const outTx = {
-          id: undefined,
-          date: inflow.date || new Date().toISOString().slice(0,10),
+          id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          date: tx.date || new Date().toISOString().slice(0, 10),
           type: "expense",
-          category: savingsLabel || "Savings",
+          category: (settings.savingsLabel || "Savings").trim() || "Savings",
           amount: saveAmt,
-          note: (inflow.note ? `${inflow.note} → auto-saved` : "Auto-saved from inflow"),
-          meta: { autoSaved: true, pairOf: inflowId || inflow.id || null, sourceCategory: inflow.category || null },
+          note: tx.note ? `${tx.note} → auto-saved` : "Auto-saved from inflow",
+          meta: { autoSaved: true, pairOf: committedId, sourceCategory: tx.category || null },
         };
 
-        // Defer the second add to avoid state replacement collisions
         setTimeout(() => onAddTransaction(outTx), 0);
       }
     }
-    return inflowId;
+
+    return committedId;
   };
 
 
