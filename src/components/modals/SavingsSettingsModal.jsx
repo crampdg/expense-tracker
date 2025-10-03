@@ -114,9 +114,10 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
     >
       <div className="p-4 md:p-5">
         <h3 className="text-lg font-semibold">Savings (Auto-Transfer on Inflow)</h3>
-        <p className="mt-1 text-sm text-gray-600">
-          When you add an inflow, the app will automatically add a matching outflow to your Savings category.
-        </p>
+          <p className="mt-1 text-sm text-gray-600">
+            When you add an inflow, the app will automatically add a matching outflow to your Savings category.
+          </p>
+
 
         <div className="mt-4 space-y-4">
           <div className="flex items-center justify-between gap-3">
