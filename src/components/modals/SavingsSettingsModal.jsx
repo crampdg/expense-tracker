@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import Modal from "../ui/Modal.jsx";
 
-/* ---------- Backup helpers (unchanged behavior) ---------- */
-const clamp01 = (x) => Math.min(0.99, Math.max(0, Number(x) || 0));
+/* ---------- tiny utils ---------- */
+const clamp01 = (x) => Math.max(0, Math.min(1, Number(x) || 0));
 const num0 = (x) => (Number.isFinite(Number(x)) ? Math.max(0, Number(x)) : 0);
 
+/* ---------- backup helpers (unchanged from your prior modal) ---------- */
 function lsGetJSON(key) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
@@ -14,7 +15,7 @@ function buildBackup() {
   const transactions = lsGetJSON("transactions") ?? [];
   const budgets = lsGetJSON("budgets") ?? lsGetJSON("budget") ?? { inflows: [], outflows: [] };
   const periodConfig = lsGetJSON("periodConfig") ?? null;
-  return { version: "blehxpenses.v2", exportedAt: new Date().toISOString(), data: { transactions, budgets, periodConfig } };
+  return { version: "blehxpenses.v3", exportedAt: new Date().toISOString(), data: { transactions, budgets, periodConfig } };
 }
 
 function mergeTransactions(existing, incoming) {
@@ -50,19 +51,19 @@ async function copyToClipboard(text) {
   catch { alert("Copy failed. Long-press in the text box to copy manually."); }
 }
 
-/* ---------- Component ---------- */
 export default function SavingsSettingsModal({ open, onClose, value, onSave, onAfterImport }) {
-  // new fields: savingsGoal, reserveDaily, reserveOnMonthStart, suggestedDailyBufferPct
-  const [form, setForm] = useState(value);
+  // New settings model (auto-save on inflow)
+  // value = { autoSavePercent, autoSaveFixed, savingsLabel }
+  const [form, setForm] = useState(value || {});
   const [showPaste, setShowPaste] = useState(false);
   const pasteRef = useRef(null);
   const fileRef = useRef(null);
 
-  useEffect(() => { setForm(value); }, [value, open]);
+  useEffect(() => { setForm(value || {}); }, [value, open]);
 
   const setNum = (k, v) => setForm((f) => ({ ...f, [k]: num0(v) }));
-  const setBool = (k, v) => setForm((f) => ({ ...f, [k]: !!v }));
   const setPct = (k, v) => setForm((f) => ({ ...f, [k]: clamp01(v) }));
+  const setStr = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = () => { onSave(form); onClose?.(); };
 
@@ -112,50 +113,41 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
       bodyClass="max-h-[min(80vh,calc(100dvh-140px))] overflow-y-auto pr-1 pb-[calc(env(safe-area-inset-bottom)+88px)] overscroll-contain"
     >
       <div className="p-4 md:p-5">
-        <h3 className="text-lg font-semibold">Savings Pot & Daily Settings</h3>
-        <p className="mt-1 text-sm text-gray-600">Set how much to reserve and how it accrues.</p>
+        <h3 className="text-lg font-semibold">Savings (Auto-Transfer on Inflow)</h3>
+        <p className="mt-1 text-sm text-gray-600">
+          When you add an inflow, the app will automatically add a matching outflow to your Savings category.
+        </p>
 
         <div className="mt-4 space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-700">Savings goal (optional)</label>
+            <label className="text-sm text-gray-700">Auto-save percent (0–1)</label>
             <input
-              type="number" step="1" min="0"
-              value={form.savingsGoal ?? 0}
-              onChange={(e) => setNum("savingsGoal", e.target.value)}
-              className="input !py-1 !text-sm w-32 text-right"
+              type="number" step="0.01" min="0" max="1"
+              value={form.autoSavePercent ?? 0}
+              onChange={(e) => setPct("autoSavePercent", e.target.value)}
+              className="input !py-1 !text-sm w-28 text-right"
             />
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-700">Reserve per day</label>
+            <label className="text-sm text-gray-700">Auto-save fixed per inflow</label>
             <input
               type="number" step="1" min="0"
-              value={form.reserveDaily ?? 0}
-              onChange={(e) => setNum("reserveDaily", e.target.value)}
-              className="input !py-1 !text-sm w-32 text-right"
+              value={form.autoSaveFixed ?? 0}
+              onChange={(e) => setNum("autoSaveFixed", e.target.value)}
+              className="input !py-1 !text-sm w-28 text-right"
             />
           </div>
 
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm text-gray-700">Reserve full period amount on day 1</span>
-            <input
-              type="checkbox"
-              checked={!!form.reserveOnMonthStart}
-              onChange={(e) => setBool("reserveOnMonthStart", e.target.checked)}
-            />
-          </label>
-
           <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-700">Safety buffer (fraction)</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number" step="0.01" min="0" max="0.99"
-                value={form.suggestedDailyBufferPct ?? 0.10}
-                onChange={(e) => setPct("suggestedDailyBufferPct", e.target.value)}
-                className="input !py-1 !text-sm w-24 text-right"
-              />
-              <span className="text-sm text-gray-500">e.g., 0.10</span>
-            </div>
+            <label className="text-sm text-gray-700">Savings label</label>
+            <input
+              type="text" maxLength={32}
+              value={form.savingsLabel ?? "Savings"}
+              onChange={(e) => setStr("savingsLabel", e.target.value)}
+              className="input !py-1 !text-sm w-40 text-right"
+              placeholder="Savings"
+            />
           </div>
 
           <div className="mt-2 flex items-center justify-end gap-2">
@@ -164,9 +156,9 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
           </div>
         </div>
 
-        {/* Backup & Transfer (kept) */}
+        {/* Backup & Transfer (unchanged) */}
         <div className="mt-6">
-          <h4 className="text-sm font-semibold text-gray-800">Backup & Transfer (mobile-friendly)</h4>
+          <h4 className="text-sm font-semibold text-gray-800">Backup & Transfer</h4>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
             <button className="px-3 py-2 rounded-md text-sm bg-emerald-600 text-white hover:bg-emerald-500" onClick={handleExportShare}>Export / Share…</button>
             <button className="px-3 py-2 rounded-md text-sm border border-gray-300 bg-white hover:bg-gray-50" onClick={handleExportDownload}>Download JSON</button>
