@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import MoneyTimeModal from "./modals/MoneyTimeModal";
 import SavingsSettingsModal from "./modals/SavingsSettingsModal.jsx";
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils";
-import { Settings as Gear } from "lucide-react";
+import { Settings as Gear, ChevronDown } from "lucide-react";
 
 /* ---------- settings I/O (new keys, backward-friendly) ---------- */
 function clamp01(x){ return Math.min(0.99, Math.max(0, Number(x)||0)); }
@@ -130,6 +130,20 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [settings, setSettings] = useState(readSettings());
   // Investments local state
   const [invest, setInvest] = useState(() => accrueInvestMonthly(readInvestState()));
+
+  // UI: collapse/expand Investments
+  const [isInvestOpen, setIsInvestOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem("investIsOpen");
+      return v ? v === "true" : false; // collapsed by default
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("investIsOpen", String(isInvestOpen)); } catch {}
+  }, [isInvestOpen]);
+
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -376,56 +390,71 @@ function withdrawNow() {
         </button>
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          {/* INVESTMENTS BUCKET */}
+          /* INVESTMENTS BUCKET (collapsible) */
           <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
-            <div className="flex items-center justify-between">
+            {/* Header row: label + chevron (APR shows only when open) */}
+            <button
+              type="button"
+              onClick={() => setIsInvestOpen((v) => !v)}
+              aria-expanded={isInvestOpen}
+              aria-controls="investments-panel"
+              className="w-full flex items-center justify-between"
+            >
               <div className="text-sm font-semibold text-emerald-900">Investments</div>
-              <div className="text-xs text-emerald-800/80">
-                APR {(readInvestAPR() * 100).toFixed(2)}%
+              <div className="flex items-center gap-2">
+                {isInvestOpen && (
+                  <div className="text-xs text-emerald-800/80">
+                    APR {(readInvestAPR() * 100).toFixed(2)}%
+                  </div>
+                )}
+                <ChevronDown className={`h-4 w-4 transition-transform ${isInvestOpen ? "rotate-180" : ""}`} />
               </div>
-            </div>
+            </button>
 
-            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                <div className="text-[11px] text-emerald-900/80">Principal invested</div>
-                <div className="text-base font-semibold text-emerald-900">{currency(invest.principal)}</div>
+            {/* Collapsible panel */}
+            <div id="investments-panel" className={isInvestOpen ? "mt-2 space-y-3" : "hidden"}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                  <div className="text-[11px] text-emerald-900/80">Principal invested</div>
+                  <div className="text-base font-semibold text-emerald-900">{currency(invest.principal)}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                  <div className="text-[11px] text-emerald-900/80">Current balance</div>
+                  <div className="text-base font-semibold text-emerald-900">{currency(invest.balance)}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                  <div className="text-[11px] text-emerald-900/80">Amount earned</div>
+                  <div className="text-base font-semibold text-emerald-900">{currency(invest.balance - invest.principal)}</div>
+                </div>
               </div>
-              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                <div className="text-[11px] text-emerald-900/80">Current balance</div>
-                <div className="text-base font-semibold text-emerald-900">{currency(invest.balance)}</div>
-              </div>
-              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                <div className="text-[11px] text-emerald-900/80">Amount earned</div>
-                <div className="text-base font-semibold text-emerald-900">{currency(invest.balance - invest.principal)}</div>
-              </div>
-            </div>
 
-            {/* 20-year forecast */}
-            <div className="mt-2 text-xs text-emerald-900/80">
-              In 20 years (forecast):{" "}
-              <span className="font-semibold text-emerald-900">
-                {currency(invest.balance * Math.pow(1 + readInvestAPR() / 12, 12 * 20))}
-              </span>
-            </div>
+              {/* 20-year forecast */}
+              <div className="text-xs text-emerald-900/80">
+                In 20 years (forecast):{" "}
+                <span className="font-semibold text-emerald-900">
+                  {currency(invest.balance * Math.pow(1 + readInvestAPR() / 12, 12 * 20))}
+                </span>
+              </div>
 
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={investNow}
-                className="px-3 py-1.5 text-sm rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-              >
-                INVEST!
-              </button>
-              <button
-                type="button"
-                onClick={withdrawNow}
-                className="px-3 py-1.5 text-sm rounded-full bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-semibold"
-              >
-                Withdraw
-              </button>
+              {/* Actions */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={investNow}
+                  className="px-3 py-1.5 text-sm rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                >
+                  INVEST!
+                </button>
+                <button
+                  type="button"
+                  onClick={withdrawNow}
+                  className="px-3 py-1.5 text-sm rounded-full bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-semibold"
+                >
+                  Withdraw
+                </button>
+              </div>
             </div>
           </div>
-
 
 
           {/* Cash on Hand */}
