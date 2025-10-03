@@ -113,7 +113,8 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
       bodyClass="max-h-[min(80vh,calc(100dvh-140px))] overflow-y-auto pr-1 pb-[calc(env(safe-area-inset-bottom)+88px)] overscroll-contain"
     >
       <div className="p-4 md:p-5">
-        <h3 className="text-lg font-semibold">Savings (Auto-Transfer on Inflow)</h3>
+        <h3 className="text-lg font-semibold">Investments Settings</h3>
+
           <p className="mt-1 text-sm text-gray-600">
             When you add an inflow, the app will automatically add a matching outflow to your Savings category.
           </p>
@@ -121,35 +122,17 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
 
         <div className="mt-4 space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-700">Auto-save percent (0–1)</label>
+            <label className="text-sm text-gray-700">Investment annual interest (APR, decimal)</label>
             <input
-              type="number" step="0.01" min="0" max="1"
-              value={form.autoSavePercent ?? 0}
-              onChange={(e) => setPct("autoSavePercent", e.target.value)}
+              type="number"
+              step="0.001"
+              min="0"
+              value={form.investAPR ?? 0.04}
+              onChange={(e) => setForm(f => ({ ...f, investAPR: Math.max(0, Number(e.target.value) || 0) }))}
               className="input !py-1 !text-sm w-28 text-right"
             />
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-700">Auto-save fixed per inflow</label>
-            <input
-              type="number" step="1" min="0"
-              value={form.autoSaveFixed ?? 0}
-              onChange={(e) => setNum("autoSaveFixed", e.target.value)}
-              className="input !py-1 !text-sm w-28 text-right"
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <label className="text-sm text-gray-700">Savings label</label>
-            <input
-              type="text" maxLength={32}
-              value={form.savingsLabel ?? "Savings"}
-              onChange={(e) => setStr("savingsLabel", e.target.value)}
-              className="input !py-1 !text-sm w-40 text-right"
-              placeholder="Savings"
-            />
-          </div>
 
           <div className="mt-2 flex items-center justify-end gap-2">
             <button className="px-3 py-1.5 rounded-md text-sm border border-gray-300 bg-white hover:bg-gray-50" onClick={onClose}>Close</button>

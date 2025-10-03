@@ -9,38 +9,83 @@ function clamp01(x){ return Math.min(0.99, Math.max(0, Number(x)||0)); }
 function pickNum(k, d=0){ try{ const v = Number(localStorage.getItem(k)); return Number.isFinite(v) ? Math.max(0,v) : d; }catch{ return d; } }
 function pickBool(k, d=false){ try{ return localStorage.getItem(k) === "true" ? true : (localStorage.getItem(k)==="false" ? false : d); }catch{ return d; } }
 function readSettings() {
-  // New autosave model
-  const autoSavePercent = clamp01(pickNum("autoSavePercent", 0)); // 0..1
-  const autoSaveFixed = pickNum("autoSaveFixed", 0);
-  const savingsLabel = pickStr("savingsLabel", "Savings");
-
-  // Keep existing buffer if your UI still uses it; default to 0.10 if present
+  const investAPR = (() => {
+    try { const v = Number(localStorage.getItem("investAPR")); return Number.isFinite(v) ? Math.max(0, v) : 0.04; } catch { return 0.04; }
+  })();
   const suggestedDailyBufferPct = clamp01(pickNum("suggestedDailyBufferPct", 0.10));
-
-  return { autoSavePercent, autoSaveFixed, savingsLabel, suggestedDailyBufferPct };
+  return { investAPR, suggestedDailyBufferPct };
 }
+
+
+// ===== Investments storage keys =====
+const INVEST_KEYS = {
+  APR: "investAPR",                  // annual rate as decimal (0.04 = 4%)
+  BAL: "investBalance",              // current compounded balance
+  PRINC: "investPrincipal",          // net principal currently invested
+  LAST: "investLastAccruedISO",      // last monthly accrual date (ISO)
+};
+
+// Read APR from storage (default 4%)
+function readInvestAPR() {
+  try { const v = Number(localStorage.getItem(INVEST_KEYS.APR)); return Number.isFinite(v) ? Math.max(0, v) : 0.04; } catch { return 0.04; }
+}
+
+function readInvestState() {
+  const apr = readInvestAPR();
+  let bal = 0, pr = 0, last = null;
+  try { bal = Number(localStorage.getItem(INVEST_KEYS.BAL)) || 0; } catch {}
+  try { pr  = Number(localStorage.getItem(INVEST_KEYS.PRINC)) || 0; } catch {}
+  try { last = localStorage.getItem(INVEST_KEYS.LAST) || null; } catch {}
+  return { apr, balance: Math.max(0, bal), principal: Math.max(0, pr), lastAccruedISO: last };
+}
+
+function writeInvestState({ balance, principal, lastAccruedISO }) {
+  try {
+    localStorage.setItem(INVEST_KEYS.BAL, String(Math.max(0, Number(balance) || 0)));
+    localStorage.setItem(INVEST_KEYS.PRINC, String(Math.max(0, Number(principal) || 0)));
+    if (lastAccruedISO) localStorage.setItem(INVEST_KEYS.LAST, lastAccruedISO);
+  } catch {}
+}
+
+// Whole-month difference: if day-of-month hasn’t reached yet, subtract 1
+function monthsBetween(fromISO, toISO) {
+  if (!fromISO) return 0;
+  const a = new Date(fromISO), b = new Date(toISO);
+  let m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  if (b.getDate() < a.getDate()) m -= 1;
+  return Math.max(0, m);
+}
+
+// Apply monthly compounding for all full months since last accrual
+function accrueInvestMonthly(state, today = new Date()) {
+  const toISO = today.toISOString().slice(0, 10);
+  const months = monthsBetween(state.lastAccruedISO || toISO, toISO);
+  if (months <= 0) return state;
+
+  const apr = readInvestAPR();                     // use latest saved APR
+  const monthly = apr / 12;
+  const factor = Math.pow(1 + monthly, months);
+  const newBal = (Number(state.balance) || 0) * factor;
+
+  const updated = { ...state, balance: newBal, lastAccruedISO: toISO };
+  writeInvestState(updated);
+  return updated;
+}
+
 
 function saveSettings(s) {
   try {
-    if (s.autoSavePercent !== undefined) {
-      const v = Math.max(0, Math.min(1, Number(s.autoSavePercent) || 0));
-      localStorage.setItem("autoSavePercent", String(v));
+    if (s.investAPR !== undefined) {
+      const v = Math.max(0, Number(s.investAPR) || 0.04);
+      localStorage.setItem("investAPR", String(v));
     }
-    if (s.autoSaveFixed !== undefined) {
-      const v = Math.max(0, Number(s.autoSaveFixed) || 0);
-      localStorage.setItem("autoSaveFixed", String(v));
-    }
-    if (s.savingsLabel !== undefined) {
-      const v = String(s.savingsLabel || "Savings");
-      localStorage.setItem("savingsLabel", v);
-    }
-    // Only touch the buffer if your modal returns it
     if (s.suggestedDailyBufferPct !== undefined) {
       const v = Math.max(0, Math.min(0.99, Number(s.suggestedDailyBufferPct) || 0.10));
       localStorage.setItem("suggestedDailyBufferPct", String(v));
     }
   } catch {}
 }
+
 
 function pickStr(k, d="") {
   try {
@@ -83,6 +128,20 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [showMoneyTime, setShowMoneyTime] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState(readSettings());
+  // Investments local state
+  const [invest, setInvest] = useState(() => accrueInvestMonthly(readInvestState()));
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      const updated = accrueInvestMonthly(readInvestState(), new Date());
+      // Only set state if something changed materially (avoid extra renders)
+      if (Math.abs(updated.balance - invest.balance) > 0.005 || updated.lastAccruedISO !== invest.lastAccruedISO) {
+        setInvest(updated);
+      }
+    }, 60 * 1000); // check monthly rollover roughly; cheap
+    return () => clearInterval(tick);
+  }, [invest.balance, invest.lastAccruedISO]);
+
 
   // ---- Inputs ----
   const txs = Array.isArray(transactions) ? transactions : [];
@@ -231,6 +290,70 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const openSettings = () => setShowSettings(true);
   const saveSettingsAndRefresh = (vals) => { saveSettings(vals); setSettings(vals); };
 
+function promptNumber(title, defaultValue = "") {
+  const raw = window.prompt(title, defaultValue);
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function investNow() {
+  // Accrue interest first so we add on top of up-to-date balance
+  const state = accrueInvestMonthly(readInvestState(), new Date());
+  const amt = promptNumber("Amount to INVEST:");
+  if (amt === null) return;
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const after = {
+    ...state,
+    balance: state.balance + amt,
+    principal: state.principal + amt,
+    lastAccruedISO: todayISO,
+  };
+  writeInvestState(after);
+  setInvest(after);
+
+  // Record an expense transaction to Investments
+  onAddTransaction?.({
+    date: todayISO,
+    type: "expense",
+    category: "Investments",
+    amount: amt,
+    note: "Invested",
+    meta: { investment: true, action: "invest" },
+  });
+}
+
+function withdrawNow() {
+  const state = accrueInvestMonthly(readInvestState(), new Date());
+  const amt = promptNumber(`Amount to WITHDRAW (available: ${currency(state.balance)})`);
+  if (amt === null) return;
+
+  const take = Math.min(amt, state.balance);
+  if (take <= 0) return;
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const newBal = state.balance - take;
+
+  // Reduce principal first; remainder comes from earnings
+  const newPrincipal = Math.max(0, state.principal - take);
+
+  const after = { ...state, balance: newBal, principal: newPrincipal, lastAccruedISO: todayISO };
+  writeInvestState(after);
+  setInvest(after);
+
+  // Record an inflow transaction from Investments
+  onAddTransaction?.({
+    date: todayISO,
+    type: "inflow",
+    category: "Investments",
+    amount: take,
+    note: "Withdrawal",
+    meta: { investment: true, action: "withdraw" },
+  });
+}
+
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* HERO */}
@@ -249,11 +372,56 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         </button>
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          {/* Savings (lifetime cumulative) */}
-          <div className="flex items-baseline justify-between pr-10">
-            <div className="text-xs text-emerald-950/85">{settings.savingsLabel || "Savings"} (lifetime)</div>
-            <div className="text-base font-semibold text-emerald-950">{currency(lifetimeSavings)}</div>
+          {/* INVESTMENTS BUCKET */}
+          <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-emerald-900">Investments</div>
+              <div className="text-xs text-emerald-800/80">
+                APR {(readInvestAPR() * 100).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <div className="text-[11px] text-emerald-900/80">Principal invested</div>
+                <div className="text-base font-semibold text-emerald-900">{currency(invest.principal)}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <div className="text-[11px] text-emerald-900/80">Current balance</div>
+                <div className="text-base font-semibold text-emerald-900">{currency(invest.balance)}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <div className="text-[11px] text-emerald-900/80">Amount earned</div>
+                <div className="text-base font-semibold text-emerald-900">{currency(invest.balance - invest.principal)}</div>
+              </div>
+            </div>
+
+            {/* 20-year forecast */}
+            <div className="mt-2 text-xs text-emerald-900/80">
+              In 20 years (forecast):{" "}
+              <span className="font-semibold text-emerald-900">
+                {currency(invest.balance * Math.pow(1 + readInvestAPR() / 12, 12 * 20))}
+              </span>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={investNow}
+                className="px-3 py-1.5 text-sm rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+              >
+                INVEST!
+              </button>
+              <button
+                type="button"
+                onClick={withdrawNow}
+                className="px-3 py-1.5 text-sm rounded-full bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-semibold"
+              >
+                Withdraw
+              </button>
+            </div>
           </div>
+
 
 
           {/* Cash on Hand */}
@@ -324,7 +492,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         <MoneyTimeModal
           open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
-          onSave={handleAddTransaction}
+          onSave={onAddTransaction}
           categories={categories}
         />
 
