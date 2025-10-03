@@ -9,33 +9,48 @@ function clamp01(x){ return Math.min(0.99, Math.max(0, Number(x)||0)); }
 function pickNum(k, d=0){ try{ const v = Number(localStorage.getItem(k)); return Number.isFinite(v) ? Math.max(0,v) : d; }catch{ return d; } }
 function pickBool(k, d=false){ try{ return localStorage.getItem(k) === "true" ? true : (localStorage.getItem(k)==="false" ? false : d); }catch{ return d; } }
 function readSettings() {
-  // New model
-  const reserveDaily = pickNum("reserveDaily", 0);
-  const reserveOnMonthStart = pickBool("reserveOnMonthStart", false);
-  const savingsGoal = pickNum("savingsGoal", 0);
+  // New autosave model
+  const autoSavePercent = clamp01(pickNum("autoSavePercent", 0)); // 0..1
+  const autoSaveFixed = pickNum("autoSaveFixed", 0);
+  const savingsLabel = pickStr("savingsLabel", "Savings");
+
+  // Keep existing buffer if your UI still uses it; default to 0.10 if present
   const suggestedDailyBufferPct = clamp01(pickNum("suggestedDailyBufferPct", 0.10));
 
-  // (legacy fallback; we don’t show these in UI anymore)
-  const legacyRate = clamp01(pickNum("savingsRate", 0));
-  const legacyFixed = pickNum("fixedMonthlySavings", 0);
-  const includeOneOffInflowsPct = clamp01(pickNum("includeOneOffInflowsPct", 0.50));
-  const sinkingAccrualMonthly = pickNum("sinkingAccrualMonthly", 0);
-
-  return {
-    // new
-    reserveDaily, reserveOnMonthStart, savingsGoal, suggestedDailyBufferPct,
-    // legacy (read-only)
-    legacyRate, legacyFixed, includeOneOffInflowsPct, sinkingAccrualMonthly,
-  };
+  return { autoSavePercent, autoSaveFixed, savingsLabel, suggestedDailyBufferPct };
 }
+
 function saveSettings(s) {
   try {
-    localStorage.setItem("reserveDaily", String(Math.max(0, s.reserveDaily||0)));
-    localStorage.setItem("reserveOnMonthStart", String(!!s.reserveOnMonthStart));
-    localStorage.setItem("savingsGoal", String(Math.max(0, s.savingsGoal||0)));
-    localStorage.setItem("suggestedDailyBufferPct", String(clamp01(s.suggestedDailyBufferPct ?? 0.10)));
+    if (s.autoSavePercent !== undefined) {
+      const v = Math.max(0, Math.min(1, Number(s.autoSavePercent) || 0));
+      localStorage.setItem("autoSavePercent", String(v));
+    }
+    if (s.autoSaveFixed !== undefined) {
+      const v = Math.max(0, Number(s.autoSaveFixed) || 0);
+      localStorage.setItem("autoSaveFixed", String(v));
+    }
+    if (s.savingsLabel !== undefined) {
+      const v = String(s.savingsLabel || "Savings");
+      localStorage.setItem("savingsLabel", v);
+    }
+    // Only touch the buffer if your modal returns it
+    if (s.suggestedDailyBufferPct !== undefined) {
+      const v = Math.max(0, Math.min(0.99, Number(s.suggestedDailyBufferPct) || 0.10));
+      localStorage.setItem("suggestedDailyBufferPct", String(v));
+    }
   } catch {}
 }
+
+function pickStr(k, d="") {
+  try {
+    const v = localStorage.getItem(k);
+    return v !== null && v !== undefined ? v : d;
+  } catch {
+    return d;
+  }
+}
+
 
 /* ---------- small helpers ---------- */
 function currency(n) {
@@ -123,15 +138,18 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
     const tx = { ...t };
 
-    // Normalize type: treat "income" or positive amount as inflow
+    // Normalize type robustly: force inflow when amount > 0 (even if UI said "expense")
     const rawType = (tx.type || "").toString().toLowerCase();
     const amtNum = Number(tx.amount);
-    const isClearlyInflow = rawType === "inflow" || rawType === "income" || (Number.isFinite(amtNum) && amtNum > 0);
+    const positive = Number.isFinite(amtNum) && amtNum > 0;
 
-    // If type is missing/ambiguous, set based on sign
-    if (!rawType) {
-      tx.type = isClearlyInflow ? "inflow" : "expense";
+    // If UI already marked it as inflow/income, keep it; else force by sign
+    if (rawType === "inflow" || rawType === "income") {
+      tx.type = "inflow";
+    } else {
+      tx.type = positive ? "inflow" : "expense";
     }
+
 
     // Ensure TX has an id so paired record can reference it even if the store doesn't return one
     if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
