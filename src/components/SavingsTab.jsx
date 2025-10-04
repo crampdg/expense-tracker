@@ -58,7 +58,7 @@ function clamp(n) {
 export default function SavingsTab() {
   // Persistent store for goals + simple history (local to this tab)
   const [goals, setGoals] = usePersistentState("savings.goals.v1", () =>
-    DEFAULT_(goals || []).map((g) => ({
+    DEFAULT_GOALS(goals || []).map((g) => ({
       id: uid(),
       name: g.name,
       target: g.target, // null or 0 => “no target”
@@ -302,7 +302,7 @@ export default function SavingsTab() {
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {DEFAULT_(goals || []).map((t) => (
+            {DEFAULT_GOALS(goals || []).map((t) => (
               <button
                 key={t.templateId}
                 onClick={() => {
