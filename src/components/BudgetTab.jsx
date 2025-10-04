@@ -11,15 +11,10 @@ import Modal from "./ui/Modal.jsx";
 /**
  * BudgetTab with:
  * - Always-show categories (removed "Show all" toggles)
- * - Drag to reorder with long-press (touch + mouse)
+ * - Drag to reorder (mouse + touch) with long-press
  * - Hover to nest as subcategory (1 level deep)
  * - Subcategories have no budget amount; parent actual = sum(child actuals)
- *
- * Notes/limits:
- * - Nesting is limited to one level (Category → Subcategories).
- * - You can reorder top-level categories and subcategories within a parent.
- * - You cannot drop a parent that already has children into another parent.
- * - Clicking a subcategory opens the same edit modal, but any entered amount is ignored.
+ * - While dragging: page scrolling and selection are disabled; a full-row ghost follows the pointer
  */
 export default function BudgetTab({
   period,
@@ -43,13 +38,12 @@ export default function BudgetTab({
       category: it.category ?? "",
       amount: Number(it.amount ?? 0),
       auto: !!it.auto,
-      // if file already had nested structure keep it, else default []
       children: Array.isArray(it.children)
         ? it.children.map((c) => ({
             category: c.category ?? "",
-            amount: 0, // subcategories: budget ignored
+            amount: 0, // subcategories ignore budget
             auto: !!c.auto,
-            children: [], // limit to 1 level
+            children: [],
           }))
         : [],
     }));
@@ -67,10 +61,19 @@ export default function BudgetTab({
   const [menuOpen, setMenuOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
 
-  // DRAG & DROP (long-press)
-  const [drag, setDrag] = useState(null); // {section, path, item, x, y, dx, dy}
-  const [indicator, setIndicator] = useState(null); // {section, path, pos: 'above'|'below'} | null
-  const [hoverParent, setHoverParent] = useState(null); // {section, path} to nest under (only depth 0)
+  // DRAG & DROP
+  /**
+   * drag object:
+   * {
+   *   section, path, item,
+   *   x, y, dx, dy,
+   *   depth,
+   *   rowRect, tableRect
+   * }
+   */
+  const [drag, setDrag] = useState(null);
+  const [indicator, setIndicator] = useState(null); // {section, path, pos: 'above'|'below'}
+  const [hoverParent, setHoverParent] = useState(null); // {section, path} (depth 0 only)
   const longPressTimer = useRef(null);
   const rowRefs = useRef(new Map()); // key "section:1.2" -> {el, depth}
 
@@ -192,7 +195,6 @@ export default function BudgetTab({
 
   // ---- Auto-rows from transactions in active period ------------------------
   useEffect(() => {
-    // Only create as top-level rows
     const have = { inflows: new Set(), outflows: new Set() };
     (normBudgets.inflows ?? []).forEach((r) => {
       have.inflows.add(norm(r.category));
@@ -262,7 +264,6 @@ export default function BudgetTab({
   };
 
   const insertAt = (arr, path, item, pos) => {
-    // path points to existing row. Insert before/after that row.
     const clone = JSON.parse(JSON.stringify(arr));
     if (path.length === 1) {
       const idx = path[0] + (pos === "below" ? 1 : 0);
@@ -280,7 +281,6 @@ export default function BudgetTab({
     const [pi] = parentPath; // only allow depth 0 as parent
     const parent = clone[pi];
     if (!parent.children) parent.children = [];
-    // When converting a parent to child, drop its own children (limit depth to 1)
     const child = {
       category: item.category,
       amount: 0,
@@ -300,9 +300,7 @@ export default function BudgetTab({
     const oldName = originalItem?.category ?? "";
     const oldNorm = norm(oldName);
 
-    // Subcategories ignore amount; parents accept
-    const oldAmount =
-      !isNew && !isSub ? Number(originalItem?.amount ?? 0) : 0;
+    const oldAmount = !isNew && !isSub ? Number(originalItem?.amount ?? 0) : 0;
     const newAmount = !isSub ? Number(form.amount ?? 0) : 0;
 
     const renamed = !isNew && newNorm !== oldNorm;
@@ -313,14 +311,12 @@ export default function BudgetTab({
 
     const update = (sectionArr) => {
       if (isNew) {
-        // appending new top-level only
         sectionArr.push({
           category: newName,
           amount: newAmount,
           children: [],
         });
       } else {
-        // update existing item
         if (path.length === 1) {
           const idx = path[0];
           sectionArr[idx] = {
@@ -333,20 +329,15 @@ export default function BudgetTab({
           sectionArr[pi].children[ci] = {
             ...sectionArr[pi].children[ci],
             category: newName,
-            amount: 0, // enforce
+            amount: 0,
           };
         }
       }
       return sectionArr;
     };
 
-    if (section === "inflows") {
-      setArray(section, update(getArray(section)));
-    } else {
-      setArray(section, update(getArray(section)));
-    }
+    setArray(section, update(getArray(section)));
 
-    // rename in transactions if requested (allowed for both parent & sub)
     if (renamed && scope !== "none") {
       onBulkRenameTransactions?.({
         section,
@@ -358,7 +349,6 @@ export default function BudgetTab({
       });
     }
 
-    // Undo toasts
     if (renamed) {
       showUndoToast?.(`Renamed “${oldName || "Untitled"}” → “${newName}”`, () => {
         setBudgets(snapshot);
@@ -413,7 +403,6 @@ export default function BudgetTab({
   };
 
   const claimRow = ({ section, path, isNew }, form) => {
-    // Claim only allowed for top-level rows
     const isSub = path?.length === 2;
     saveRow({ section, path, isNew, isSub }, form, "none");
     if (isSub) return;
@@ -428,15 +417,39 @@ export default function BudgetTab({
   };
 
   // -------------------- Drag logic --------------------
+  const preventScrollSelection = (enable) => {
+    const el = document.documentElement;
+    if (enable) {
+      el.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      document.body.style.webkitUserSelect = "none";
+      document.body.style.touchAction = "none";
+    } else {
+      el.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.body.style.webkitUserSelect = "";
+      document.body.style.touchAction = "";
+    }
+  };
+
   const startLongPress = (e, section, path) => {
-    // only start if not clicking link/input etc
-    if (e.button === 2) return; // right click ignore
+    if (e.button === 2) return; // ignore right-click
     const startX = e.clientX ?? (e.touches?.[0]?.clientX || 0);
     const startY = e.clientY ?? (e.touches?.[0]?.clientY || 0);
 
+    const ref = rowRefs.current.get(keyFor(section, path));
+    const rowEl = ref?.el;
+    const rowRect = rowEl?.getBoundingClientRect();
+    const tableRect = rowEl?.closest("table")?.getBoundingClientRect();
+
     const item = getItemAtPath(section, path);
     const depth = path.length - 1;
+
+    // prevent native long-press actions
+    if (e.cancelable) e.preventDefault();
+
     longPressTimer.current = window.setTimeout(() => {
+      preventScrollSelection(true);
       setDrag({
         section,
         path,
@@ -446,51 +459,53 @@ export default function BudgetTab({
         dx: 0,
         dy: 0,
         depth,
+        rowRect,
+        tableRect,
       });
     }, 180);
 
     const clear = () => {
       window.clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
-      window.removeEventListener("pointerup", clear, { passive: true });
-      window.removeEventListener("touchend", clear, { passive: true });
+      window.removeEventListener("pointerup", clear);
+      window.removeEventListener("touchend", clear);
     };
-    window.addEventListener("pointerup", clear, { passive: true });
-    window.addEventListener("touchend", clear, { passive: true });
+    window.addEventListener("pointerup", clear);
+    window.addEventListener("touchend", clear);
   };
 
   useEffect(() => {
     if (!drag) return;
 
     const onMove = (e) => {
+      // Stop page scroll while dragging
+      if (e.cancelable) e.preventDefault();
+
       const x = e.clientX ?? (e.touches?.[0]?.clientX || drag.x);
       const y = e.clientY ?? (e.touches?.[0]?.clientY || drag.y);
       setDrag((d) => ({ ...d, dx: x - d.x, dy: y - d.y }));
 
-      // compute target
       let bestIndicator = null;
       let bestHover = null;
 
       for (const [k, { el, depth }] of rowRefs.current.entries()) {
         const [sec, pathStr] = k.split(":");
-        if (sec !== drag.section) continue; // same section only
+        if (sec !== drag.section) continue;
         const rect = el.getBoundingClientRect();
-        const midY = (rect.top + rect.bottom) / 2;
         const nearTop = Math.abs(y - rect.top) <= 8;
         const nearBottom = Math.abs(y - rect.bottom) <= 8;
 
-        // If pointer inside the row and not near edges -> possible nest (only depth 0)
+        // Hover inside the row (not near edges) -> possible parent (depth 0)
         if (y > rect.top + 10 && y < rect.bottom - 10 && depth === 0) {
-          // nest into this top-level item
-          // disallow if dragged item has children
-          if (
-            !(drag.item?.children && drag.item.children.length > 0)
-          ) {
-            bestHover = { section: sec, path: pathStr.split(".").map((n) => Number(n)) };
+          // only allow if the dragged item has no children
+          if (!(drag.item?.children && drag.item.children.length > 0)) {
+            bestHover = {
+              section: sec,
+              path: pathStr.split(".").map((n) => Number(n)),
+            };
           }
         }
 
-        // insertion line above/below (blue)
         if (nearTop) {
           bestIndicator = {
             section: sec,
@@ -503,11 +518,6 @@ export default function BudgetTab({
             path: pathStr.split(".").map((n) => Number(n)),
             pos: "below",
           };
-        } else {
-          // choose by closeness to midline if nothing else
-          if (!bestIndicator || Math.abs(y - midY) < Math.abs(y - ((rowRefs.current.get(keyFor(bestIndicator.section, bestIndicator.path))?.el.getBoundingClientRect().top ?? midY)))) {
-            // do nothing; edges preferred
-          }
         }
       }
 
@@ -516,34 +526,30 @@ export default function BudgetTab({
     };
 
     const onUp = () => {
-      // Perform drop
       if (indicator || hoverParent) {
         pushHistory();
         const arr = getArray(drag.section);
-        // remove source
         const { removed, next } = removeAtPath(arr, drag.path);
         let result = next;
 
         if (hoverParent) {
-          // nest under parent depth 0
           result = nestUnder(result, hoverParent.path, removed);
         } else if (indicator) {
-          // Prevent no-op when dropping immediately next to itself
           result = insertAt(result, indicator.path, removed, indicator.pos);
         }
-
         setArray(drag.section, result);
       }
-
+      preventScrollSelection(false);
       setDrag(null);
       setIndicator(null);
       setHoverParent(null);
     };
 
-    window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerup", onUp, { passive: true });
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onUp, { passive: true });
+    // IMPORTANT: non-passive so we can preventDefault() and stop scrolling
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp, { passive: false });
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp, { passive: false });
 
     return () => {
       window.removeEventListener("pointermove", onMove);
@@ -561,6 +567,7 @@ export default function BudgetTab({
       const isSub = depth === 1;
       const k = keyFor(section, path);
       const actual = actualForItem(section, item);
+
       const isIndicatorAbove =
         indicator &&
         indicator.section === section &&
@@ -577,16 +584,29 @@ export default function BudgetTab({
         hoverParent.path.join(".") === path.join(".") &&
         depth === 0;
 
+      const isDraggingThis =
+        drag &&
+        drag.section === section &&
+        drag.path.join(".") === path.join(".");
+
       return (
         <>
+          {/* Blue line ABOVE target */}
+          {isIndicatorAbove ? (
+            <tr>
+              <td colSpan={3}>
+                <div className="h-0.5 bg-blue-500 mx-4 rounded-full" />
+              </td>
+            </tr>
+          ) : null}
+
           <tr
             key={k}
             ref={registerRowRef(section, path, depth)}
             className={[
-              "cursor-pointer border-t border-gray-100",
-              "relative",
+              "cursor-grab border-t border-gray-100 relative",
               isHoverParent ? "bg-gray-100/60" : "hover:bg-gray-50",
-              isIndicatorAbove ? "outline outline-2 -outline-offset-2 outline-blue-500/70" : "",
+              isDraggingThis ? "opacity-40" : "",
             ].join(" ")}
             onClick={() =>
               setEditing({
@@ -602,7 +622,6 @@ export default function BudgetTab({
           >
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
               <div className="flex items-center gap-2">
-                {/* grab handle icon (visual only) */}
                 <span className="text-gray-400 select-none">⋮⋮</span>
                 <span>
                   {item.category}
@@ -621,6 +640,8 @@ export default function BudgetTab({
               {money(actual)}
             </td>
           </tr>
+
+          {/* Blue line BELOW target */}
           {isIndicatorBelow ? (
             <tr>
               <td colSpan={3}>
@@ -628,6 +649,7 @@ export default function BudgetTab({
               </td>
             </tr>
           ) : null}
+
           {Array.isArray(item.children) &&
             item.children.map((c, j) => renderRow(c, j, 1, path))}
         </>
@@ -635,7 +657,7 @@ export default function BudgetTab({
     };
 
     return (
-      <div className="overflow-auto" data-noswipe>
+      <div className={`overflow-auto ${drag ? "select-none" : ""}`} data-noswipe>
         <table className="w-full border-t border-gray-200 text-sm">
           <thead className="bg-gray-50/50 sticky top-0 z-10">
             <tr className="text-left text-gray-600">
@@ -665,8 +687,13 @@ export default function BudgetTab({
 
   return (
     <>
-      <div id="budget-tab" className="space-y-3">
-        {/* HEADER — compact */}
+      {/* touchAction:none on wrapper while dragging to fully suppress scroll on mobile */}
+      <div
+        id="budget-tab"
+        className="space-y-3"
+        style={drag ? { touchAction: "none" } : undefined}
+      >
+        {/* HEADER */}
         <Card className="p-3 md:p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
@@ -800,7 +827,7 @@ export default function BudgetTab({
           </div>
           <SectionTable section="outflows" rows={normBudgets.outflows} />
 
-          {/* Bottom NET row (Budget vs Actual) */}
+          {/* Bottom NET row */}
           <div className="px-4 py-3 text-sm border-t border-gray-100">
             <table className="w-full">
               <thead>
@@ -830,34 +857,36 @@ export default function BudgetTab({
         </Card>
       </div>
 
-      {/* Modal for add/edit */}
+      {/* Modal */}
       <BudgetEditModal
-      open={!!editing}
-      onClose={() => setEditing(null)}
-      item={
-        editing
-          ? editing.isNew
-            ? {
-                category: "",
-                amount: editing.isSub ? 0 : "",
-                section: editing.section,
-              }
-            : {
-                ...getItemAtPath(editing.section, editing.path),
-                amount: editing.isSub ? 0 : getItemAtPath(editing.section, editing.path)?.amount ?? 0,
-                section: editing.section,
-              }
-          : null
-      }
-      isNew={!!editing?.isNew}
-      isSub={!!editing?.isSub}
-      onSave={(form, scope) => saveRow(editing, form, scope)}
-      onDelete={() => deleteRow(editing)}
-      onClaim={(form) => claimRow(editing, form)}
-    />
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        item={
+          editing
+            ? editing.isNew
+              ? {
+                  category: "",
+                  amount: editing.isSub ? 0 : "",
+                  section: editing.section,
+                }
+              : {
+                  ...getItemAtPath(editing.section, editing.path),
+                  amount:
+                    editing.isSub
+                      ? 0
+                      : getItemAtPath(editing.section, editing.path)?.amount ?? 0,
+                  section: editing.section,
+                }
+            : null
+        }
+        isNew={!!editing?.isNew}
+        isSub={!!editing?.isSub}
+        onSave={(form, scope) => saveRow(editing, form, scope)}
+        onDelete={() => deleteRow(editing)}
+        onClaim={(form) => claimRow(editing, form)}
+      />
 
-
-      {/* Period Settings Modal (compact) */}
+      {/* Period Settings */}
       <Modal
         open={periodOpen}
         onClose={() => setPeriodOpen(false)}
@@ -900,17 +929,40 @@ export default function BudgetTab({
         </div>
       </Modal>
 
-      {/* Floating drag preview */}
+      {/* Floating drag GHOST — full row */}
       {drag ? (
         <div
-          className="fixed left-0 top-0 pointer-events-none z-50"
+          className="fixed z-50 pointer-events-none"
           style={{
-            transform: `translate(${drag.x + drag.dx - 12}px, ${drag.y + drag.dy - 12}px)`,
-            transition: "transform 0s",
+            left: (drag.tableRect?.left ?? drag.rowRect?.left ?? 0) + "px",
+            top:
+              drag.y +
+              drag.dy -
+              ((drag.rowRect?.height ?? 40) / 2) +
+              "px",
+            width: (drag.tableRect?.width ?? drag.rowRect?.width ?? 320) + "px",
           }}
         >
-          <div className="px-3 py-1.5 rounded-md shadow-md border bg-white text-sm">
-            {drag.item.category}
+          <div className="px-4 py-2 bg-white border rounded-md shadow-lg text-sm">
+            <div className="grid" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 select-none">⋮⋮</span>
+                <span>
+                  {drag.item.category}
+                  {drag.item.auto ? (
+                    <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">
+                      auto
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+              <div className="text-right tabular-nums">
+                {drag.path.length === 1 ? money(Number(drag.item.amount || 0)) : ""}
+              </div>
+              <div className="text-right tabular-nums">
+                {money(actualForItem(drag.section, drag.item))}
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
