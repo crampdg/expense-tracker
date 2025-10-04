@@ -38,7 +38,9 @@ export default function SwipeTabs({
       startX = t.clientX;
       startY = t.clientY;
       // only arm swipe if started at edges to avoid fighting scroll
-      armed = startX <= edge || startX >= width - edge;
+      // Allow "edge=0" to mean: start swipe anywhere
+      armed = edge <= 0 || startX <= edge || startX >= width - edge;
+
       moved = false;
     };
 
@@ -82,7 +84,12 @@ export default function SwipeTabs({
   }, [active, tabs, edge, threshold, onChange]);
 
   return (
-    <div ref={ref} className={className} style={{ touchAction: "pan-y" }}>
+    <div
+      ref={ref}
+      className={className}
+      style={{ touchAction: "pan-y", overscrollBehaviorX: "contain" }}
+    >
+
       {children}
     </div>
   );

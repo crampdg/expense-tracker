@@ -255,7 +255,10 @@ function App() {
         tabs={["wallet","budget","summary","detailed"]}
         active={activeTab}
         onChange={setActiveTab}
+        edge={0}        // swipe can start anywhere, not just the edges
+        threshold={56}  // ~56px horizontal move to trigger
       >
+
 
         {activeTab === 'wallet' && (
           <WalletTab
