@@ -685,7 +685,7 @@ export default function BudgetTab({
   // -------------------- UI --------------------
   return (
     <>
-      <Card className="p-4 bg-gradient-to-b from-white to-slate-50 border border-slate-200">
+      <Card className="p-4 bg-slate-50 border border-slate-200">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-semibold text-lg text-slate-800">Budget</h2>
           <div className="relative">
@@ -834,7 +834,7 @@ export default function BudgetTab({
         />
 
         {/* Net band */}
-        <div className="px-4 py-3 text-sm border-t border-emerald-200 bg-gradient-to-r from-emerald-50 to-emerald-100">
+        <div className="px-4 py-3 text-sm border-t border-emerald-200 bg-emerald-50">
           <table className="w-full">
             <thead>
               <tr className="text-left text-emerald-900/80">
