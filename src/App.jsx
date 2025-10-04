@@ -11,6 +11,8 @@ import BudgetEditModal from './components/modals/BudgetEditModal.jsx'
 import TransactionEditModal from './components/modals/TransactionEditModal.jsx'
 import BottomNav from './components/ui/BottomNav.jsx'
 import { useState, useMemo, useEffect, useRef } from 'react'
+import SwipeTabs from './components/ui/SwipeTabs.jsx';
+
 
 
 function App() {
@@ -248,7 +250,13 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="flex-1 overflow-y-auto p-4 pb-28">
+      <SwipeTabs
+        className="flex-1 overflow-y-auto p-4 pb-28"
+        tabs={["wallet","budget","summary","detailed"]}
+        active={activeTab}
+        onChange={setActiveTab}
+      >
+
         {activeTab === 'wallet' && (
           <WalletTab
             budget={budget}
@@ -297,7 +305,7 @@ function App() {
         )}
 
 
-      </div>
+      </SwipeTabs>
 
       {/* Undo Toast */}
       {toast && (
