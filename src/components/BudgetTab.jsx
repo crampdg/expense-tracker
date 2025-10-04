@@ -15,7 +15,6 @@ import Modal from "./ui/Modal.jsx";
  * - No drag, no "Parent > Child", no "+ Sub", no inline move.
  * - Collapse toggle (▾/▸) stays for readability.
  */
-
 export default function BudgetTab({
   period,
   setPeriod,
@@ -25,18 +24,20 @@ export default function BudgetTab({
   transactions,
   periodOffset,
   setPeriodOffset,
-  onBulkRenameTransactions,
   showUndoToast,
+  onBulkRenameTransactions,
 }) {
   // -------------------- Helpers --------------------
   const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const isBlank = (s) => !s || !s.trim();
 
-  const normalizeTree = (arr) =>
+  const normalizeTree = (arr, section) =>
     (Array.isArray(arr) ? arr : []).map((it) => ({
       category: it.category ?? "",
       amount: Number(it.amount ?? 0),
       auto: !!it.auto,
+      // Type only matters for outflows top-level; default to "variable" if missing
+      type: section === "outflows" ? (it.type === "fixed" ? "fixed" : "variable") : (it.type ?? undefined),
       children: Array.isArray(it.children)
         ? it.children.map((c) => ({
             category: c.category ?? "",
@@ -47,7 +48,8 @@ export default function BudgetTab({
         : [],
     }));
 
-  const getArray = (section) => normalizeTree(budgets?.[section]);
+  // derived accessors into budgets state
+  const getArray = (section) => normalizeTree(budgets?.[section], section);
   const setArray = (section, newArr) =>
     setBudgets((prev) => ({ ...prev, [section]: newArr }));
 
@@ -74,32 +76,36 @@ export default function BudgetTab({
     );
 
   // Editing / history
-  const [editing, setEditing] = useState(null); // {section, path, isNew}
+  const [editing, setEditing] = useState(null); // {section, path, isNew, presetType?}
   const [history, setHistory] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
 
+  // history snapshot
   const pushHistory = () =>
-    setHistory((h) => [...h, JSON.parse(JSON.stringify(budgets))]);
+    setHistory((h) => [
+      ...h,
+      JSON.stringify({ period, budgets, transactions, periodOffset }),
+    ]);
 
   const undo = () => {
-    setHistory((h) => {
-      if (!h.length) return h;
-      const prev = h[h.length - 1];
-      setBudgets(prev);
-      return h.slice(0, -1);
-    });
+    if (!history.length) return;
+    const last = history[history.length - 1];
+    try {
+      const parsed = JSON.parse(last);
+      setPeriod(parsed.period);
+      setBudgets(parsed.budgets);
+      setPeriodOffset(parsed.periodOffset);
+      showUndoToast?.("Undid last change");
+      setHistory((h) => h.slice(0, -1));
+    } catch (e) {
+      // ignore
+    }
   };
 
-  // ---- Period range ---------------------------------------------------------
+  // -------------------- Period math --------------------
   const offsetStart = useMemo(
-    () =>
-      getAnchoredPeriodStart(
-        period.type,
-        period.anchorDate,
-        new Date(),
-        periodOffset
-      ),
+    () => getAnchoredPeriodStart(period.type, period.anchorDate, periodOffset),
     [period.type, period.anchorDate, periodOffset]
   );
   const offsetEnd = useMemo(
@@ -145,24 +151,14 @@ export default function BudgetTab({
     return Number(map[norm(item.category)] || 0);
   };
 
-  // ---- Totals / Net ---------------------------------------------------------
   const inflowsTotalBudget = useMemo(
-    () =>
-      (getArray("inflows") ?? []).reduce(
-        (s, i) => s + Number(i.amount || 0),
-        0
-      ),
+    () => (getArray("inflows") ?? []).reduce((s, i) => s + Number(i.amount || 0), 0),
     [budgets]
   );
   const outflowsTotalBudget = useMemo(
-    () =>
-      (getArray("outflows") ?? []).reduce(
-        (s, o) => s + Number(o.amount || 0),
-        0
-      ),
+    () => (getArray("outflows") ?? []).reduce((s, o) => s + Number(o.amount || 0), 0),
     [budgets]
   );
-  const netBudgeted = inflowsTotalBudget - outflowsTotalBudget;
 
   const inflowsTotalActual = useMemo(
     () =>
@@ -180,6 +176,7 @@ export default function BudgetTab({
       ),
     [budgets, outflowActuals]
   );
+  const netBudgeted = inflowsTotalBudget - outflowsTotalBudget;
   const netActual = inflowsTotalActual - outflowsTotalActual;
 
   // ---- Auto-rows from transactions in active period ------------------------
@@ -198,28 +195,34 @@ export default function BudgetTab({
     for (const t of txs) {
       if (isBlank(t.category)) continue;
       if (!(t.date >= startISO && t.date <= endISO)) continue;
-      const section =
-        t.type === "inflow"
-          ? "inflows"
-          : t.type === "expense"
-          ? "outflows"
-          : null;
-      if (!section) continue;
-      const k = norm(t.category);
-      if (!have[section].has(k)) {
-        toAdd[section].push({
-          category: (t.category || "").trim(),
-          amount: 0,
-          auto: true,
-          children: [],
-        });
-        have[section].add(k);
+
+      if (t.type === "inflow") {
+        if (!have.inflows.has(norm(t.category))) {
+          toAdd.inflows.push({
+            category: t.category,
+            amount: 0,
+            auto: true,
+            children: [],
+          });
+        }
+      } else if (t.type === "expense") {
+        if (!have.outflows.has(norm(t.category))) {
+          toAdd.outflows.push({
+            category: t.category,
+            amount: 0,
+            auto: true,
+            children: [],
+            type: "variable", // default if we auto-create from tx
+          });
+        }
       }
     }
+
     if (toAdd.inflows.length || toAdd.outflows.length) {
       setBudgets((prev) => ({
-        inflows: [...normalizeTree(prev?.inflows), ...toAdd.inflows],
-        outflows: [...normalizeTree(prev?.outflows), ...toAdd.outflows],
+        ...prev,
+        inflows: [...normalizeTree(prev?.inflows, "inflows"), ...toAdd.inflows],
+        outflows: [...normalizeTree(prev?.outflows, "outflows"), ...toAdd.outflows],
       }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,12 +266,12 @@ export default function BudgetTab({
     if (isNew) {
       if (!targetParent) {
         // top-level
-        arr = [...arr, { category: newName, amount: newAmount, auto: false, children: [] }];
+        arr = [...arr, { category: newName, amount: newAmount, auto: false, children: [], ...(section === "outflows" ? { type: (form?.type === "fixed" ? "fixed" : "variable") } : {}) }];
       } else {
         // sub of existing or new parent (create parent if needed)
         let pIdx = arr.findIndex((r) => norm(r.category) === norm(targetParent));
         if (pIdx === -1) {
-          arr = [...arr, { category: targetParent, amount: 0, auto: false, children: [] }];
+          arr = [...arr, { category: targetParent, amount: 0, auto: false, children: [], ...(section === "outflows" ? { type: "variable" } : {}) }];
           pIdx = arr.length - 1;
         }
         const clone = JSON.parse(JSON.stringify(arr));
@@ -295,14 +298,14 @@ export default function BudgetTab({
       if (!targetParent) {
         // Promote to top-level
         base[pi].children.splice(ci, 1);
-        base.push({ category: newName, amount: newAmount, auto: !!child.auto, children: [] });
+        base.push({ category: newName, amount: newAmount, auto: !!child.auto, children: [], ...(section === "outflows" ? { type: (form?.type ? (form.type === "fixed" ? "fixed" : "variable") : (base[pi]?.type || "variable")) } : {}) });
         setArray(section, base);
       } else {
         // Move to (possibly different) parent
         base[pi].children.splice(ci, 1);
         let pIdx = base.findIndex((r) => norm(r.category) === norm(targetParent));
         if (pIdx === -1) {
-          base.push({ category: targetParent, amount: 0, auto: false, children: [] });
+          base.push({ category: targetParent, amount: 0, auto: false, children: [], ...(section === "outflows" ? { type: "variable" } : {}) });
           pIdx = base.length - 1;
         }
         if (!base[pIdx].children) base[pIdx].children = [];
@@ -311,13 +314,13 @@ export default function BudgetTab({
       }
     } else {
       // was top-level
-      const idx = path[0];
       const base = JSON.parse(JSON.stringify(arr));
+      const idx = path[0];
       const current = base[idx];
 
       if (!targetParent) {
-        // remain top-level: update name/amount
-        base[idx] = { ...current, category: newName, amount: newAmount };
+        // stay top-level; update category/amount (and type for outflows)
+        base[idx] = { ...current, category: newName, amount: newAmount, ...(section === "outflows" ? { type: (form?.type === "fixed" ? "fixed" : "variable") } : {}) };
         setArray(section, base);
       } else {
         // move under parent; lift existing children to top-level to maintain 1-level depth
@@ -326,12 +329,12 @@ export default function BudgetTab({
         if (removed.children?.length) {
           withLift = [
             ...withLift,
-            ...removed.children.map((c) => ({ ...c, amount: 0, children: [] })),
+            ...removed.children.map((c) => ({ ...c, amount: 0, children: [], ...(section === "outflows" ? { type: (removed?.type || "variable") } : {}) })),
           ];
         }
         let pIdx = withLift.findIndex((r) => norm(r.category) === norm(targetParent));
         if (pIdx === -1) {
-          withLift = [...withLift, { category: targetParent, amount: 0, auto: false, children: [] }];
+          withLift = [...withLift, { category: targetParent, amount: 0, auto: false, children: [], ...(section === "outflows" ? { type: "variable" } : {}) }];
           pIdx = withLift.length - 1;
         }
         if (!withLift[pIdx].children) withLift[pIdx].children = [];
@@ -380,17 +383,33 @@ export default function BudgetTab({
   const claimRow = ({ section, path, isNew }, form) => {
     // only for top-level lines
     const isSub = path?.length === 2;
-    saveRow({ section, path, isNew }, { category: form.category, amount: form.amount, parent: null }, "none");
+    saveRow({ section, path, isNew }, { category: form.category, amount: form.amount, parent: null, type: form?.type }, "none");
     if (isSub) return;
     const k = norm((form.category || "").trim() || "Untitled");
     const arr = getArray(section);
     const found = arr.findIndex((r) => norm(r.category) === k);
-    const targetIndex = found >= 0 ? found : path[0];
-    onClaim(section, targetIndex, { category: (form.category || "").trim() || "Untitled", amount: Number(form.amount) || 0 });
+    if (found > -1) {
+      onClaim?.({ section, category: arr[found].category, amount: Number(form.amount || 0) });
+    }
   };
 
-  // -------------------- Render --------------------
+  // ---- SECTION TABLE (now sorted; shows per-table totals) -------------------
   const SectionTable = ({ section, rows }) => {
+    // Sort top-level rows by highest Actual first
+    const sortedRows = useMemo(
+      () => (rows ?? []).slice().sort((a, b) => actualForItem(section, b) - actualForItem(section, a)),
+      [rows, inflowActuals, outflowActuals]
+    );
+    // Section totals (top-level only)
+    const tableBudgetTotal = useMemo(
+      () => (rows ?? []).reduce((s, it) => s + Number(it.amount || 0), 0),
+      [rows]
+    );
+    const tableActualTotal = useMemo(
+      () => (rows ?? []).reduce((s, it) => s + actualForItem(section, it), 0),
+      [rows, inflowActuals, outflowActuals]
+    );
+
     const renderRow = (item, idx, depth, parentPath) => {
       const path = [...parentPath, idx];
       const thisKey = keyFor(section, path);
@@ -406,7 +425,6 @@ export default function BudgetTab({
               depth === 0 && isCollapsed(section, path) ? "" : "hover:bg-gray-50",
             ].join(" ")}
             onClick={editing ? undefined : () => setEditing({ section, path, isNew: false })}
-
             data-depth={depth}
           >
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
@@ -437,7 +455,10 @@ export default function BudgetTab({
           </tr>
 
           {/* children */}
-          {!isCollapsed(section, path) ? item.children?.map((c, j) => renderRow(c, j, 1, path)) : null}
+          {!isCollapsed(section, path)
+            ? (item.children ? [...item.children].sort((a,b)=> actualForItem(section, b) - actualForItem(section, a)) : [])
+                .map((c, j) => renderRow(c, j, 1, path))
+            : null}
         </>
       );
     };
@@ -461,135 +482,113 @@ export default function BudgetTab({
                 </td>
               </tr>
             ) : (
-              rows.map((it, i) => renderRow(it, i, 0, []))
+              sortedRows.map((it, i) => renderRow(it, i, 0, []))
             )}
           </tbody>
+            <tfoot>
+              <tr className="border-t">
+                <td className="px-4 py-2 font-semibold">Total</td>
+                <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(tableBudgetTotal)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(tableActualTotal)}</td>
+              </tr>
+            </tfoot>
         </table>
       </div>
     );
   };
 
-  const openAdd = (section) => {
-    setEditing({
-      section,
-      path: [getArray(section).length],
-      isNew: true,
-    });
-  };
-
-  // Compute modal props (parents list + current parent) based on editing ctx
-  const modalParents = editing
-    ? parentNames(editing.section, editing.path?.length === 1 ? getItemAtPath(editing.section, editing.path)?.category : "")
-    : [];
-  const modalCurrentParent =
-    editing && editing.path?.length === 2
-      ? getArray(editing.section)[editing.path[0]]?.category || null
-      : null;
-
+  // -------------------- UI --------------------
   return (
     <>
-      <div id="budget-tab" className="space-y-3">
-        {/* HEADER */}
-        <Card className="p-3 md:p-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold tracking-tight">Budget</h2>
-              <div className="text-[11px] md:text-xs text-gray-600">
-                {offsetStart.toDateString()} – {offsetEnd.toDateString()}
-              </div>
-            </div>
-
-            <div className="relative">
-              <Button type="button" variant="ghost" className="!px-2 !py-1" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen} title="More">
-                ⋯
-              </Button>
-              {menuOpen && (
-                <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-md z-20">
-                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 disabled:text-gray-400" onClick={() => { undo(); setMenuOpen(false); }} disabled={!history.length}>
-                    Undo
-                  </button>
-                  <div className="px-2 py-1.5 border-t border-gray-100">
-                    <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
-                  </div>
-                  <div className="px-2 py-1 border-t border-gray-100">
-                    <SharePDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
-                  </div>
-                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 border-t border-gray-100" onClick={() => { setPeriodOffset(0); setMenuOpen(false); }}>
-                    Reset to current period
-                  </button>
-                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50 border-t border-gray-100" onClick={() => { setPeriodOpen(true); setMenuOpen(false); }}>
-                    Period settings…
-                  </button>
+      <Card className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold text-lg">Budget</h2>
+          <div className="relative">
+            <Button type="button" variant="ghost" onClick={() => setMenuOpen((o) => !o)}>
+              ⋯
+            </Button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-md z-20">
+                <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" onClick={() => { undo(); setMenuOpen(false); }} disabled={!history.length}>
+                  Undo
+                </button>
+                <div className="px-2 py-1.5 border-top border-gray-100">
+                  <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
                 </div>
-              )}
-            </div>
+                <div className="px-2 py-1 border-t border-gray-100">
+                  <SharePDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
+                </div>
+                <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50" onClick={() => { setPeriodOffset(0); setMenuOpen(false); }}>
+                  Reset to current period
+                </button>
+                <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50" onClick={() => { setPeriodOpen(true); setMenuOpen(false); }}>
+                  Period settings…
+                </button>
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Period arrows + chip */}
-          <div className="mt-2 flex items-center gap-1">
-            <Button type="button" variant="ghost" className="!px-2 !py-1 text-sm" onClick={() => setPeriodOffset((o) => o - 1)} title="Previous">←</Button>
-            <Button type="button" variant="ghost" className="!px-2 !py-1 text-sm" onClick={() => setPeriodOffset((o) => o + 1)} title="Next">→</Button>
-            <button type="button" onClick={() => setPeriodOpen(true)} className="px-2.5 py-1 rounded-full border border-gray-300 bg-white text-gray-700 text-xs md:text-sm hover:bg-gray-50" title="Open period settings">
-              {period.type} • {startISO} → {endISO}
-            </button>
-          </div>
-        </Card>
+        {/* Period arrows + chip */}
+        <div className="mt-2 flex items-center gap-1">
+          <Button type="button" variant="ghost" className="!px-2" onClick={() => setPeriodOffset((o) => o - 1)} title="Previous">←</Button>
+          <Button type="button" variant="ghost" className="!px-2" onClick={() => setPeriodOffset((o) => o + 1)} title="Next">→</Button>
+          <button type="button" onClick={() => setPeriodOpen(true)} className="px-2 py-1 rounded border text-gray-700 text-xs md:text-sm hover:bg-gray-50" title="Open period settings">
+            {period.type} • {startISO} → {endISO}
+          </button>
+        </div>
+      </Card>
 
-        {/* TABLES */}
-        <Card className="p-0 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h3 className="font-medium">Inflows</h3>
-            <Button type="button" variant="ghost" onClick={() => { if (!editing) openAdd("inflows"); }} className="!px-2 !py-1 text-sm">+ Add</Button>
-          </div>
-          <SectionTable section="inflows" rows={getArray("inflows")} />
-          <div className="h-px bg-gray-200 my-1" />
+      {/* TABLES */}
+      <Card id="budget-tab" className="p-0 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3">
+          <h3 className="font-medium">Inflows</h3>
+          <Button type="button" variant="ghost" onClick={() => { setEditing({ section: "inflows", path: [getArray("inflows").length], isNew: true }); }} className="!px-2 !py-1 text-sm">+ Add</Button>
+        </div>
+        <SectionTable section="inflows" rows={getArray("inflows")} />
 
-          <div className="flex items-center justify-between px-4 py-3">
-            <h3 className="font-medium">Outflows</h3>
-            <Button type="button" variant="ghost" onClick={() => { if (!editing) openAdd("outflows"); }} className="!px-2 !py-1 text-sm">+ Add</Button>
-          </div>
-          <SectionTable section="outflows" rows={getArray("outflows")} />
+        <div className="h-px bg-gray-200 my-1" />
 
-          {/* NET */}
-          <div className="px-4 py-3 text-sm border-t border-gray-100">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-gray-600">
-                  <th className="py-1 w-2/5"> </th>
-                  <th className="py-1 text-right">Budget</th>
-                  <th className="py-1 text-right">Actual</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="py-2 font-semibold">Net</td>
-                  <td className="py-2 text-right tabular-nums font-semibold">{money(netBudgeted)}</td>
-                  <td className={`py-2 text-right tabular-nums font-semibold ${netActual < 0 ? "text-red-600" : "text-emerald-700"}`}>{money(netActual)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
+        <div className="flex items-center justify-between px-4 py-3">
+          <h3 className="font-medium">Fixed Outflows</h3>
+          <Button type="button" variant="ghost" onClick={() => {
+              const len = getArray("outflows").length;
+              setEditing({ section: "outflows", path: [len], isNew: true, presetType: "fixed" });
+            }} className="!px-2 !py-1 text-sm">+ Add</Button>
+        </div>
+        <SectionTable section="outflows" rows={getArray("outflows").filter(r => (r.type || "variable") === "fixed")} />
 
-      {/* Modal */}
-      <BudgetEditModal
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        item={
-          editing
-            ? editing.isNew
-              ? { category: "", amount: "", section: editing.section }
-              : { ...getItemAtPath(editing.section, editing.path), section: editing.section }
-            : null
-        }
-        isNew={!!editing?.isNew}
-        parents={editing ? parentNames(editing.section, editing.path?.length === 1 ? getItemAtPath(editing.section, editing.path)?.category : "") : []}
-        currentParent={editing && editing.path?.length === 2 ? getArray(editing.section)[editing.path[0]]?.category || null : null}
-        onSave={(form, scope) => saveRow(editing, form, scope)}
-        onDelete={() => deleteRow(editing)}
-        onClaim={(form) => claimRow(editing, form)}
-      />
+        <div className="h-px bg-gray-200 my-1" />
+
+        <div className="flex items-center justify-between px-4 py-3">
+          <h3 className="font-medium">Variable Outflows</h3>
+          <Button type="button" variant="ghost" onClick={() => {
+              const len = getArray("outflows").length;
+              setEditing({ section: "outflows", path: [len], isNew: true, presetType: "variable" });
+            }} className="!px-2 !py-1 text-sm">+ Add</Button>
+        </div>
+        <SectionTable section="outflows" rows={getArray("outflows").filter(r => (r.type || "variable") === "variable")} />
+
+        {/* NET */}
+        <div className="px-4 py-3 text-sm border-t border-gray-100">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-gray-600">
+                <th className="py-1 w-2/5"> </th>
+                <th className="py-1 text-right">Budget</th>
+                <th className="py-1 text-right">Actual</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="py-2 font-semibold">Net</td>
+                <td className="py-2 text-right tabular-nums font-semibold">{money(netBudgeted)}</td>
+                <td className={`py-2 text-right tabular-nums font-semibold ${netActual < 0 ? "text-red-600" : "text-emerald-700"}`}>{money(netActual)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {/* Period Settings */}
       <Modal open={periodOpen} onClose={() => setPeriodOpen(false)} title="Period settings">
@@ -610,6 +609,19 @@ export default function BudgetTab({
           </div>
         </div>
       </Modal>
+
+      {/* Editor modal */}
+      <BudgetEditModal
+        open={!!editing}
+        item={editing ? (getItemAtPath(editing.section, editing.path) || { category: '', amount: 0, section: editing.section, type: (editing.section === "outflows" ? (editing.presetType || "variable") : undefined) }) : null}
+        isNew={!!editing?.isNew}
+        parents={editing ? parentNames(editing.section, getItemAtPath(editing.section, editing.path)?.category || "") : []}
+
+        currentParent={editing && editing.path?.length === 2 ? getArray(editing.section)[editing.path[0]]?.category || null : null}
+        onSave={(form, scope) => saveRow(editing, form, scope)}
+        onDelete={() => deleteRow(editing)}
+        onClaim={(form) => claimRow(editing, form)}
+      />
     </>
   );
 }

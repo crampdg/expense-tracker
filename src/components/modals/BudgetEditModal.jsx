@@ -5,12 +5,12 @@ import { useState, useEffect, useMemo } from 'react'
 /**
  * Props:
  * - open, onClose
- * - item: { category, amount, section }  // section used only for label context
+ * - item: { category, amount, section, type? }  // 'type' used for outflows only
  * - isNew: boolean
  * - parents: string[]           // list of existing top-level parents in this section (excluding self)
  * - currentParent: string|null  // the row's current parent name, or null if top-level
  * - onSave(form, scope) -> scope: "all" | "period" | "none"
- *      form = { category: string, amount: number, parent: string|null }
+ *      form = { category: string, amount: number, parent: string|null, type?: "fixed"|"variable" }
  * - onDelete()
  * - onClaim(form)
  */
@@ -25,7 +25,7 @@ export default function BudgetEditModal({
   onDelete,
   onClaim
 }) {
-  const [form, setForm] = useState({ category: '', amount: '', parent: '' })
+  const [form, setForm] = useState({ category: '', amount: '', parent: '', type: '' })
   const [stage, setStage] = useState('edit') // 'edit' | 'rename'
   const [renameScope, setRenameScope] = useState('all') // default A
 
@@ -47,7 +47,10 @@ export default function BudgetEditModal({
     setForm({
       category: item.category || '',
       amount: item.amount ?? '',
-      parent: currentParent || '' // '' => top-level
+      parent: currentParent || '', // '' => top-level
+      type: ((item?.section || '').toString().toLowerCase() === 'outflows')
+        ? (item?.type === 'fixed' ? 'fixed' : 'variable')
+        : ''
     });
     setStage('edit');
     setRenameScope('all');
@@ -83,7 +86,10 @@ export default function BudgetEditModal({
         {
           category: form.category.trim(),
           amount: hasParent ? 0 : numberAmount,
-          parent: hasParent ? form.parent.trim() : null
+          parent: hasParent ? form.parent.trim() : null,
+          type: ((item?.section || '').toString().toLowerCase() === 'outflows' && !hasParent)
+            ? (form.type === 'fixed' ? 'fixed' : 'variable')
+            : undefined
         },
         'none'
       )
@@ -95,7 +101,10 @@ export default function BudgetEditModal({
       {
         category: form.category.trim(),
         amount: hasParent ? 0 : numberAmount,
-        parent: hasParent ? form.parent.trim() : null
+        parent: hasParent ? form.parent.trim() : null,
+        type: ((item?.section || '').toString().toLowerCase() === 'outflows' && !hasParent)
+          ? (form.type === 'fixed' ? 'fixed' : 'variable')
+          : undefined
       },
       renameScope
     )
@@ -139,6 +148,22 @@ export default function BudgetEditModal({
               )}
             </div>
 
+            {/* Type (Outflows only, top-level only) */}
+            {((item?.section || '').toString().toLowerCase() === 'outflows') && !hasParent && (
+              <div className="grid gap-1">
+                <label className="text-xs text-gray-600">Type</label>
+                <select
+                  className="select"
+                  value={form.type}
+                  onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                >
+                  <option value="variable">Variable (default)</option>
+                  <option value="fixed">Fixed</option>
+                </select>
+                <p className="text-xs text-gray-600">You can change this later. Variable is default.</p>
+              </div>
+            )}
+
             {/* Amount only for top-level */}
             {!hasParent && (
               <input
@@ -165,7 +190,7 @@ export default function BudgetEditModal({
                 <Button
                   variant="ghost"
                   onClick={() =>
-                    onClaim?.({ category: form.category.trim(), amount: numberAmount })
+                    onClaim?.({ category: form.category.trim(), amount: numberAmount, type: ((item?.section || '').toString().toLowerCase() === 'outflows' && !hasParent) ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined })
                   }
                 >
                   Claim
