@@ -58,14 +58,15 @@ function clamp(n) {
 export default function SavingsTab() {
   // Persistent store for goals + simple history (local to this tab)
   const [goals, setGoals] = usePersistentState("savings.goals.v1", () =>
-    DEFAULT_GOALS(goals || []).map((g) => ({
-      id: uid(),
-      name: g.name,
-      target: g.target, // null or 0 => “no target”
-      balance: 0,
-      createdAt: Date.now(),
+    DEFAULT_GOALS.map((g) => ({
+        id: safeUid(),
+        name: g.name,
+        target: g.target, // null or 0 => “no target”
+        balance: 0,
+        createdAt: Date.now(),
     })),
-  );
+    );
+
   const [history, setHistory] = usePersistentState("savings.history.v1", []);
   const [expandedId, setExpandedId] = useState(null);
 
@@ -84,13 +85,13 @@ export default function SavingsTab() {
     setGoals((prev) => prev.map((g) => (g.id === next.id ? next : g)));
   }
   function addGoal(newGoal) {
-    setGoals((prev) => [{ id: uid(), balance: 0, createdAt: Date.now(), ...newGoal }, ...prev]);
+    setGoals((prev) => [{ id: safeUid(), balance: 0, createdAt: Date.now(), ...newGoal }, ...prev]);
   }
   function removeGoal(id) {
     setGoals((prev) => prev.filter((g) => g.id !== id));
   }
   function addHistory(entry) {
-    setHistory((prev) => [{ id: uid(), t: Date.now(), ...entry }, ...prev].slice(0, 500));
+    setHistory((prev) => [{ id: safeUid(), t: Date.now(), ...entry }, ...prev].slice(0, 500));
   }
 
   function applyTx(kind, goal, rawAmount) {
@@ -302,7 +303,7 @@ export default function SavingsTab() {
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {DEFAULT_GOALS(goals || []).map((t) => (
+            {DEFAULT_GOALS.map((t) => (
               <button
                 key={t.templateId}
                 onClick={() => {
