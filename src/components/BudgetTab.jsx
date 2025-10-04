@@ -330,6 +330,14 @@ export default function BudgetTab({
 
     const ref = rowRefs.current.get(keyFor(section, path));
     const rowEl = ref?.el;
+
+    // Lock this row immediately so iOS doesn't scroll during the long-press
+    try { e.currentTarget?.setPointerCapture?.(pointerId); } catch {}
+    if (rowEl) {
+      rowEl.style.touchAction = "none";          // stop native panning on this element
+      rowEl.style.webkitUserSelect = "none";     // no accidental text selection
+    }
+
     const rowRect = rowEl?.getBoundingClientRect();
     const tableRect = rowEl?.closest("table")?.getBoundingClientRect();
 
@@ -411,9 +419,15 @@ export default function BudgetTab({
         setArray(drag.section, result);
       }
       preventScrollSelection(false, drag.sourceEl, drag.pointerId);
+      if (drag.sourceEl) {
+        try { drag.sourceEl.releasePointerCapture?.(drag.pointerId); } catch {}
+        drag.sourceEl.style.touchAction = "";
+        drag.sourceEl.style.webkitUserSelect = "";
+      }
       setDrag(null);
       setIndicator(null);
       setHoverParent(null);
+
     };
 
     // Pointer events (primary path)
@@ -472,11 +486,15 @@ export default function BudgetTab({
               isHoverParent ? "bg-gray-100/60" : "hover:bg-gray-50",
               isDraggingThis ? "opacity-40" : "",
             ].join(" ")}
+            style={{ touchAction: drag ? "none" : "manipulation" }}
             onClick={() => setEditing({ section, path, isNew: false, isSub })}
             onPointerDown={(e) => startLongPress(e, section, path)}
+            onPointerMove={(e) => { if (longPressTimer.current || drag) { if (e.cancelable) e.preventDefault(); } }}
+            onTouchMove={(e) => { if (longPressTimer.current || drag) { if (e.cancelable) e.preventDefault(); } }}
             onContextMenu={(e) => e.preventDefault()}
             data-depth={depth}
           >
+
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 select-none">⋮⋮</span>
