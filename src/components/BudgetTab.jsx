@@ -227,31 +227,38 @@ export default function BudgetTab({
     });
 
     const toAdd = { inflows: [], outflows: [] };
+    const pending = { inflows: new Set(), outflows: new Set() }; // prevent dupes within the same pass
+
     for (const t of txs) {
       if (isBlank(t.category)) continue;
       if (!(t.date >= startISO && t.date <= endISO)) continue;
 
+      const n = norm(t.category);
+
       if (t.type === "inflow") {
-        if (!have.inflows.has(norm(t.category))) {
+        if (!have.inflows.has(n) && !pending.inflows.has(n)) {
           toAdd.inflows.push({
             category: t.category,
             amount: 0,
             auto: true,
             children: [],
           });
+          pending.inflows.add(n);
         }
       } else if (t.type === "expense") {
-        if (!have.outflows.has(norm(t.category))) {
+        if (!have.outflows.has(n) && !pending.outflows.has(n)) {
           toAdd.outflows.push({
             category: t.category,
             amount: 0,
             auto: true,
             children: [],
-            type: "variable", // default if we auto-create from tx
+            type: "variable",
           });
+          pending.outflows.add(n);
         }
       }
     }
+
 
     if (toAdd.inflows.length || toAdd.outflows.length) {
       setBudgets((prev) => ({
@@ -523,11 +530,10 @@ export default function BudgetTab({
 
   // ---- SECTION TABLE (now sorted; shows per-table totals) -------------------
   const SectionTable = ({ section, rows = [], baseRows }) => {
-    // baseRows = the full, original top-level array for this section
-    // rows     = what you are displaying (can be filtered/sorted subset)
+    // baseRows = the full, original top-level array for this section (unfiltered)
     const top = baseRows ?? rows;
 
-    // Sort only for display, keep original object references
+    // Sort only for display
     const sortedRows = useMemo(
       () => (rows ?? []).slice().sort((a, b) => actualForItem(section, b) - actualForItem(section, a)),
       [rows, inflowActuals, outflowActuals, section]
@@ -542,13 +548,14 @@ export default function BudgetTab({
       [rows, inflowActuals, outflowActuals, section]
     );
 
+    // Path by NAME to avoid identity issues from clones/filters
     const pathFor = (item, parentRef = null) => {
       if (!parentRef) {
-        const pi = top.indexOf(item); // index in the ORIGINAL array
+        const pi = top.findIndex(r => norm(r.category) === norm(item.category));
         return [pi];
       }
-      const pi = top.indexOf(parentRef);
-      const ci = (parentRef?.children || []).indexOf(item);
+      const pi = top.findIndex(r => norm(r.category) === norm(parentRef.category));
+      const ci = (top[pi]?.children || []).findIndex(c => norm(c.category) === norm(item.category));
       return [pi, ci];
     };
 
@@ -573,7 +580,6 @@ export default function BudgetTab({
           >
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
               <div className="flex items-center gap-2">
-                {/* collapse/expand for parents */}
                 {depth === 0 && item.children?.length ? (
                   <button
                     type="button"
@@ -583,11 +589,7 @@ export default function BudgetTab({
                       toggleCollapse(section, path);
                     }}
                     title={isCollapsed(section, path) ? "Expand" : "Collapse"}
-                    aria-label={
-                      isCollapsed(section, path)
-                        ? "Expand subcategories"
-                        : "Collapse subcategories"
-                    }
+                    aria-label={isCollapsed(section, path) ? "Expand subcategories" : "Collapse subcategories"}
                   >
                     {isCollapsed(section, path) ? "▸" : "▾"}
                   </button>
@@ -596,9 +598,7 @@ export default function BudgetTab({
                 <span className="ml-1">
                   {item.category}
                   {item.auto ? (
-                    <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">
-                      auto
-                    </span>
+                    <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">auto</span>
                   ) : null}
                 </span>
               </div>
@@ -609,12 +609,9 @@ export default function BudgetTab({
             <td className="px-4 py-2 text-right tabular-nums">{money(actual)}</td>
           </tr>
 
-          {/* children (sorted for display only) */}
           {!isCollapsed(section, path)
             ? (item.children
-                ? [...item.children].sort(
-                    (a, b) => actualForItem(section, b) - actualForItem(section, a)
-                  )
+                ? [...item.children].sort((a, b) => actualForItem(section, b) - actualForItem(section, a))
                 : []
               ).map((child) => renderRow(child, 1, item))
             : null}
@@ -646,18 +643,15 @@ export default function BudgetTab({
           <tfoot>
             <tr className="border-t">
               <td className="px-4 py-2 font-semibold">Total</td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                {money(tableBudgetTotal)}
-              </td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                {money(tableActualTotal)}
-              </td>
+              <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(tableBudgetTotal)}</td>
+              <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(tableActualTotal)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
     );
   };
+
 
 
   // -------------------- UI --------------------
