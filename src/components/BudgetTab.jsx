@@ -8,15 +8,6 @@ import ExportPDFButton from "./ui/ExportPDFButton.jsx";
 import SharePDFButton from "./ui/SharePDFButton.jsx";
 import Modal from "./ui/Modal.jsx";
 
-/**
- * Props:
- * - period, setPeriod
- * - budgets, setBudgets         // { inflows: [{category, amount, auto?}], outflows: [...] }
- * - transactions                // [{ date:'YYYY-MM-DD', type:'inflow'|'expense'|..., category, amount }]
- * - periodOffset, setPeriodOffset
- * - onClaim(section, index, {category, amount})
- * - onBulkRenameTransactions({ section:'inflows'|'outflows', oldName, newName, scope:'all'|'period'|'none', startISO, endISO })
- */
 export default function BudgetTab({
   period,
   setPeriod,
@@ -28,27 +19,20 @@ export default function BudgetTab({
   setPeriodOffset,
   onBulkRenameTransactions,
 }) {
-  // ---------------- Utils ----------------
-  const norm = (s) =>
-    (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const isBlank = (s) => !s || !s.trim();
 
-  // ---- Safety ---------------------------------------------------------------
   const normBudgets = budgets ?? { inflows: [], outflows: [] };
   const txs = Array.isArray(transactions) ? transactions : [];
 
   const [editing, setEditing] = useState(null); // {section, index, isNew}
   const [history, setHistory] = useState([]);   // for Undo (budgets)
-  const [activeSection, setActiveSection] = useState("outflows"); // 'inflows' | 'outflows' | 'all'
   const [showAllIn, setShowAllIn] = useState(false);
   const [showAllOut, setShowAllOut] = useState(false);
-
   const [menuOpen, setMenuOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
 
-  const pushHistory = () =>
-    setHistory((h) => [...h, JSON.parse(JSON.stringify(budgets))]);
-
+  const pushHistory = () => setHistory((h) => [...h, JSON.parse(JSON.stringify(budgets))]);
   const undo = () => {
     setHistory((h) => {
       if (!h.length) return h;
@@ -57,18 +41,11 @@ export default function BudgetTab({
       return h.slice(0, -1);
     });
   };
+  const addRow = (section) => setEditing({ section, index: normBudgets[section].length, isNew: true });
 
-  const addRow = (section) =>
-    setEditing({ section, index: normBudgets[section].length, isNew: true });
-
-  // ---- Period range (start / end) ------------------------------------------
+  // ---- Period range ---------------------------------------------------------
   const offsetStart = useMemo(() => {
-    return getAnchoredPeriodStart(
-      period.type,
-      period.anchorDate,
-      new Date(),
-      periodOffset
-    );
+    return getAnchoredPeriodStart(period.type, period.anchorDate, new Date(), periodOffset);
   }, [period.type, period.anchorDate, periodOffset]);
 
   const offsetEnd = useMemo(() => {
@@ -78,7 +55,7 @@ export default function BudgetTab({
   const startISO = offsetStart.toISOString().slice(0, 10);
   const endISO = offsetEnd.toISOString().slice(0, 10);
 
-  // ---- Actuals inside the active period (case/space-insensitive) -----------
+  // ---- Actuals in period ----------------------------------------------------
   const inflowActuals = useMemo(() => {
     const m = {};
     for (const t of txs) {
@@ -105,7 +82,7 @@ export default function BudgetTab({
     return m;
   }, [txs, startISO, endISO]);
 
-  // ---- Totals / Net (budgeted) ---------------------------------------------
+  // ---- Totals / Net ---------------------------------------------------------
   const inflowsTotalBudget = useMemo(
     () => (normBudgets.inflows ?? []).reduce((s, i) => s + Number(i.amount || 0), 0),
     [normBudgets]
@@ -115,6 +92,16 @@ export default function BudgetTab({
     [normBudgets]
   );
   const netBudgeted = inflowsTotalBudget - outflowsTotalBudget;
+
+  const inflowsTotalActual = useMemo(
+    () => Object.values(inflowActuals).reduce((s, v) => s + Number(v || 0), 0),
+    [inflowActuals]
+  );
+  const outflowsTotalActual = useMemo(
+    () => Object.values(outflowActuals).reduce((s, v) => s + Number(v || 0), 0),
+    [outflowActuals]
+  );
+  const netActual = inflowsTotalActual - outflowsTotalActual;
 
   // ---- Auto-rows from transactions in active period ------------------------
   useEffect(() => {
@@ -216,10 +203,7 @@ export default function BudgetTab({
     });
   };
 
-  const diffClass = (n) => (n >= 0 ? "text-emerald-700" : "text-red-600");
-
-  // ------------- Helpers for compact tables ---------------------------------
-  const sliceOrAll = (arr, showAll) => showAll ? arr : arr.slice(0, 4);
+  const sliceOrAll = (arr, showAll) => (showAll ? arr : arr.slice(0, 4));
 
   const InflowsTable = ({ rows }) => (
     <div className="overflow-auto">
@@ -229,7 +213,6 @@ export default function BudgetTab({
             <th className="px-4 py-2 w-2/5">Title</th>
             <th className="px-4 py-2 text-right">Budget</th>
             <th className="px-4 py-2 text-right">Actual</th>
-            <th className="px-4 py-2 text-right">Diff</th>
           </tr>
         </thead>
         <tbody>
@@ -237,7 +220,6 @@ export default function BudgetTab({
             const k = norm(item.category);
             const actual = Number(inflowActuals[k] || 0);
             const budget = Number(item.amount || 0);
-            const diff = actual - budget; // inflow good if >= 0
             return (
               <tr
                 key={`${item.category}-${idx}`}
@@ -252,13 +234,12 @@ export default function BudgetTab({
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums">{money(budget)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">{money(actual)}</td>
-                <td className={`px-4 py-2 text-right tabular-nums ${diffClass(diff)}`}>{money(diff)}</td>
               </tr>
             );
           })}
           {rows.length === 0 && (
             <tr>
-              <td className="px-4 py-4 text-center text-gray-500" colSpan={4}>No inflows yet</td>
+              <td className="px-4 py-4 text-center text-gray-500" colSpan={3}>No inflows yet</td>
             </tr>
           )}
         </tbody>
@@ -274,7 +255,6 @@ export default function BudgetTab({
             <th className="px-4 py-2 w-2/5">Title</th>
             <th className="px-4 py-2 text-right">Budget</th>
             <th className="px-4 py-2 text-right">Actual</th>
-            <th className="px-4 py-2 text-right">Diff</th>
           </tr>
         </thead>
         <tbody>
@@ -282,7 +262,6 @@ export default function BudgetTab({
             const k = norm(item.category);
             const actual = Number(outflowActuals[k] || 0);
             const budget = Number(item.amount || 0);
-            const diff = budget - actual; // outflow remaining (good if >= 0)
             return (
               <tr
                 key={`${item.category}-${idx}`}
@@ -297,13 +276,12 @@ export default function BudgetTab({
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums">{money(budget)}</td>
                 <td className="px-4 py-2 text-right tabular-nums">{money(actual)}</td>
-                <td className={`px-4 py-2 text-right tabular-nums ${diffClass(diff)}`}>{money(diff)}</td>
               </tr>
             );
           })}
           {rows.length === 0 && (
             <tr>
-              <td className="px-4 py-4 text-center text-gray-500" colSpan={4}>No outflows yet</td>
+              <td className="px-4 py-4 text-center text-gray-500" colSpan={3}>No outflows yet</td>
             </tr>
           )}
         </tbody>
@@ -311,12 +289,11 @@ export default function BudgetTab({
     </div>
   );
 
-  // ================ RENDER ===================================================
+  // ================== RENDER =================================================
   return (
     <>
-      {/* Export/Share root */}
       <div id="budget-tab" className="space-y-3">
-        {/* HEADER — super compact */}
+        {/* HEADER — compact */}
         <Card className="p-3 md:p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
@@ -380,142 +357,115 @@ export default function BudgetTab({
           </div>
 
           {/* Period arrows + chip */}
-          <div className="mt-2 flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                className="!px-2 !py-1 text-sm"
-                onClick={() => setPeriodOffset((o) => o - 1)}
-                title="Previous"
-              >
-                ←
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="!px-2 !py-1 text-sm"
-                onClick={() => setPeriodOffset((o) => o + 1)}
-                title="Next"
-              >
-                →
-              </Button>
-              <button
-                type="button"
-                onClick={() => setPeriodOpen(true)}
-                className="px-2.5 py-1 rounded-full border border-gray-300 bg-white text-gray-700 text-xs md:text-sm hover:bg-gray-50"
-                title="Open period settings"
-              >
-                {period.type} • {startISO} → {endISO}
-              </button>
-            </div>
-
-            {/* Segmented toggle */}
-            <div className="flex rounded-full border border-gray-300 overflow-hidden text-xs md:text-sm">
-              {["inflows","outflows","all"].map((key, i) => {
-                const map = { inflows: "Inflows", outflows: "Outflows", all: "All" };
-                const active = activeSection === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setActiveSection(key)}
-                    className={`px-3 py-1 ${active ? "bg-gray-900 text-white" : "bg-white text-gray-700 hover:bg-gray-50"} ${i ? "border-l border-gray-300" : ""}`}
-                    aria-pressed={active}
-                  >
-                    {map[key]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* KPI pills */}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
-              <span className="text-gray-500 mr-1">Budgeted Inflows</span>
-              <span className="font-medium">{money(inflowsTotalBudget)}</span>
-            </span>
-            <span className="px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
-              <span className="text-gray-500 mr-1">Budgeted Outflows</span>
-              <span className="font-medium">{money(outflowsTotalBudget)}</span>
-            </span>
-            <span className="px-2 py-1 rounded-full bg-gray-50 border border-gray-200">
-              <span className="text-gray-500 mr-1">Net</span>
-              <span className={`font-semibold ${netBudgeted < 0 ? "text-red-600" : "text-emerald-700"}`}>
-                {money(netBudgeted)}
-              </span>
-            </span>
+          <div className="mt-2 flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              className="!px-2 !py-1 text-sm"
+              onClick={() => setPeriodOffset((o) => o - 1)}
+              title="Previous"
+            >
+              ←
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="!px-2 !py-1 text-sm"
+              onClick={() => setPeriodOffset((o) => o + 1)}
+              title="Next"
+            >
+              →
+            </Button>
+            <button
+              type="button"
+              onClick={() => setPeriodOpen(true)}
+              className="px-2.5 py-1 rounded-full border border-gray-300 bg-white text-gray-700 text-xs md:text-sm hover:bg-gray-50"
+              title="Open period settings"
+            >
+              {period.type} • {startISO} → {endISO}
+            </button>
           </div>
         </Card>
 
-        {/* TABLES — compact, with show first 4 rows */}
+        {/* TABLES — Inflows and Outflows side by side (stacked) */}
         <Card className="p-0 overflow-hidden">
-          {/* ACTIVE: Inflows */}
-          {(activeSection === "inflows" || activeSection === "all") && (
-            <>
-              <div className="flex items-center justify-between px-4 py-3">
-                <h3 className="font-medium">Inflows</h3>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => addRow("inflows")}
-                  className="!px-2 !py-1 text-sm"
-                >
-                  + Add
-                </Button>
-              </div>
-              <InflowsTable rows={sliceOrAll(normBudgets.inflows ?? [], activeSection === "all" ? showAllIn : showAllIn)} />
-              {(normBudgets.inflows ?? []).length > 4 && (
-                <div className="px-4 py-2">
-                  <button
-                    type="button"
-                    className="text-xs text-gray-700 underline underline-offset-4"
-                    onClick={() => setShowAllIn((v) => !v)}
-                  >
-                    {showAllIn ? "Show less" : `Show all (${(normBudgets.inflows ?? []).length})`}
-                  </button>
-                </div>
-              )}
-              {activeSection === "all" && <div className="h-px bg-gray-200 my-1" />}
-            </>
+          {/* Inflows */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <h3 className="font-medium">Inflows</h3>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => addRow("inflows")}
+              className="!px-2 !py-1 text-sm"
+            >
+              + Add
+            </Button>
+          </div>
+          <InflowsTable rows={sliceOrAll(normBudgets.inflows ?? [], showAllIn)} />
+          {(normBudgets.inflows ?? []).length > 4 && (
+            <div className="px-4 py-2">
+              <button
+                type="button"
+                className="text-xs text-gray-700 underline underline-offset-4"
+                onClick={() => setShowAllIn((v) => !v)}
+              >
+                {showAllIn ? "Show less" : `Show all (${(normBudgets.inflows ?? []).length})`}
+              </button>
+            </div>
+          )}
+          <div className="h-px bg-gray-200 my-1" />
+
+          {/* Outflows */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <h3 className="font-medium">Outflows</h3>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => addRow("outflows")}
+              className="!px-2 !py-1 text-sm"
+            >
+              + Add
+            </Button>
+          </div>
+          <OutflowsTable rows={sliceOrAll(normBudgets.outflows ?? [], showAllOut)} />
+          {(normBudgets.outflows ?? []).length > 4 && (
+            <div className="px-4 py-2">
+              <button
+                type="button"
+                className="text-xs text-gray-700 underline underline-offset-4"
+                onClick={() => setShowAllOut((v) => !v)}
+              >
+                {showAllOut ? "Show less" : `Show all (${(normBudgets.outflows ?? []).length})`}
+              </button>
+            </div>
           )}
 
-          {/* ACTIVE: Outflows */}
-          {(activeSection === "outflows" || activeSection === "all") && (
-            <>
-              <div className="flex items-center justify-between px-4 py-3">
-                <h3 className="font-medium">Outflows</h3>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => addRow("outflows")}
-                  className="!px-2 !py-1 text-sm"
-                >
-                  + Add
-                </Button>
-              </div>
-              <OutflowsTable rows={sliceOrAll(normBudgets.outflows ?? [], activeSection === "all" ? showAllOut : showAllOut)} />
-              {(normBudgets.outflows ?? []).length > 4 && (
-                <div className="px-4 py-2">
-                  <button
-                    type="button"
-                    className="text-xs text-gray-700 underline underline-offset-4"
-                    onClick={() => setShowAllOut((v) => !v)}
+          {/* Bottom NET row (Budget vs Actual) */}
+          <div className="px-4 py-3 text-sm border-t border-gray-100">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-gray-600">
+                  <th className="py-1 w-2/5"> </th>
+                  <th className="py-1 text-right">Budget</th>
+                  <th className="py-1 text-right">Actual</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="py-2 font-semibold">Net</td>
+                  <td className="py-2 text-right tabular-nums font-semibold">
+                    {money(netBudgeted)}
+                  </td>
+                  <td
+                    className={`py-2 text-right tabular-nums font-semibold ${
+                      netActual < 0 ? "text-red-600" : "text-emerald-700"
+                    }`}
                   >
-                    {showAllOut ? "Show less" : `Show all (${(normBudgets.outflows ?? []).length})`}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Subtle footer total (right aligned) */}
-          <div className="flex justify-end px-4 py-3 text-sm border-t border-gray-100">
-            <span className="text-gray-600 mr-2">Net Budgeted:</span>
-            <span className={`font-semibold ${netBudgeted < 0 ? "text-red-600" : "text-emerald-700"}`}>
-              {money(netBudgeted)}
-            </span>
+                    {money(netActual)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </Card>
       </div>
