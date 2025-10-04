@@ -17,7 +17,7 @@ export default function TransactionEditModal({ open, onClose, transaction, onSav
     <Modal open={open} onClose={onClose}>
       <h3 className="font-semibold mb-3">Edit Transaction</h3>
       <form
-        className="grid gap-3"
+        className="grid gap-3 tap-safe"
         onSubmit={e => {
             e.preventDefault()
             onSave({ ...form, id: transaction.id, amount: Number(form.amount || 0) })
@@ -43,6 +43,7 @@ export default function TransactionEditModal({ open, onClose, transaction, onSav
         <input
           className="input"
           type="number"
+          inputMode="decimal"
           value={form.amount}
           onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
           required
@@ -71,7 +72,7 @@ export default function TransactionEditModal({ open, onClose, transaction, onSav
                 ) : (
                 <div className="flex gap-2">
                     <Button
-                    variant="destructive"
+                    variant="danger"
                     type="button"
                     onClick={() => onDelete()}
                     >

@@ -87,7 +87,7 @@ export default function BudgetEditModal({
             {isNew ? 'Add Budget Line' : `Edit ${item?.category}`}
           </h3>
 
-          <div className="grid gap-3">
+          <div className="grid gap-3 tap-safe">
             <input
               className="input"
               type="text"
@@ -100,15 +100,18 @@ export default function BudgetEditModal({
             <input
               className="input"
               type="number"
+              inputMode="decimal"
               placeholder="Amount"
               value={form.amount}
               onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
               required
             />
 
+
             <div className="flex justify-end gap-2 flex-wrap">
               {!isNew && (
-                <Button variant="destructive" onClick={onDelete}>
+                <Button variant="danger" onClick={onDelete}>
+
                   Delete
                 </Button>
               )}

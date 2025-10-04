@@ -1,168 +1,228 @@
-// src/components/ui/BottomNav.jsx
-import React, { useMemo, useRef, useCallback } from "react";
-import { Wallet as WalletIcon, BarChart2, PieChart, List } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import { Wallet as WalletIcon, BarChart2, PieChart, List, Lock } from "lucide-react";
 
 /**
  * BottomNav
  *
  * Props:
- *  - active: "wallet" | "budget" | "summary" | "detailed"
+ *  - active: "wallet" | "budget" | "summary" | "detailed" | "settings" | "coming"
  *  - setActive: (key) => void
- *  - walletIconSrc?: string
+ *  - walletIconSrc?: string  // OPTIONAL: path to your app logo (PNG/SVG). If omitted, uses a vector icon.
  *
  * Notes:
- *  - Adds iOS zoom guards: .tap-safe (touch-action: manipulation), 44px min hit area,
- *    and a small double-tap suppression on the bar itself.
+ *  - Wallet button is a raised, circular FAB that sits slightly above the bar.
+ *  - Bar is a darker emerald so the center button stands out.
+ *  - Arrow keys cycle tabs (skips disabled).
  */
 export default function BottomNav({ active, setActive, walletIconSrc }) {
-  const lastTouchEndRef = useRef(0);
-
-  // tab order you requested: budget → summary → wallet (center FAB) → detailed
-  const tabs = useMemo(
+  const items = useMemo(
     () => [
-      { key: "budget", label: "Budget", icon: BarChart2 },
-      { key: "summary", label: "Summary", icon: PieChart },
-      { key: "wallet", label: "Wallet", icon: WalletIcon, center: true },
-      { key: "detailed", label: "Detailed", icon: List },
+      { key: "budget", label: "Budget", Icon: BarChart2, disabled: false },
+      { key: "summary", label: "Summary", Icon: PieChart, disabled: false },
+      // center wallet rendered separately as a FAB
+      { key: "detailed", label: "Detailed", Icon: List, disabled: false },
+      { key: "coming", label: "Coming", Icon: Lock, disabled: true },
     ],
     []
   );
 
-  const onKeyDown = useCallback(
-    (e) => {
-      if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
-      e.preventDefault();
-      const order = tabs.map((t) => t.key);
-      const idx = order.indexOf(active);
-      if (idx === -1) return;
-      const delta = e.key === "ArrowRight" ? 1 : -1;
-      const next = (idx + delta + order.length) % order.length;
-      setActive(order[next]);
-    },
-    [active, setActive, tabs]
+  const keys = useMemo(
+    () => ["budget", "summary", "wallet", "detailed", "coming"],
+    []
   );
 
-  // Suppress double-tap zoom on the whole bar (extra belt-and-suspenders for iOS)
-  const onTouchEnd = useCallback((e) => {
-    const now = Date.now();
-    if (now - lastTouchEndRef.current < 300) {
+  const handleKey = useCallback(
+    (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       e.preventDefault();
-    }
-    lastTouchEndRef.current = now;
-  }, []);
+      const current = keys.indexOf(active);
+      if (current === -1) return;
 
+      let nextIndex =
+        e.key === "ArrowRight"
+          ? (current + 1) % keys.length
+          : (current - 1 + keys.length) % keys.length;
+
+      // skip disabled destinations
+      let guard = 0;
+      while (keys[nextIndex] === "coming" && guard++ < keys.length) {
+        nextIndex =
+          e.key === "ArrowRight"
+            ? (nextIndex + 1) % keys.length
+            : (nextIndex - 1 + keys.length) % keys.length;
+      }
+      setActive(keys[nextIndex]);
+    },
+    [active, keys, setActive]
+  );
+
+  // styling tokens
+  const barBg =
+    "bg-emerald-700/95 backdrop-blur-sm border-t border-emerald-800 shadow-[0_-4px_12px_rgba(16,185,129,0.25)]";
   const baseBtn =
-    "tap-safe select-none flex flex-col items-center justify-center min-h-[44px] min-w-[56px] px-3 py-1.5 " +
-    "rounded-xl transition-transform active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
-
-  const activeText = "text-emerald-900";
+    "h-12 w-full max-w-[110px] px-2 flex flex-col items-center justify-center gap-1 focus:outline-none";
+  const inactiveIcon = "text-emerald-200";
+  const activeIcon = "text-white";
   const inactiveText = "text-emerald-100/80";
-  const activeIcon = "text-white drop-shadow";
-  const inactiveIcon = "text-emerald-100/90";
+  const activeText = "text-white";
+
+  // center wallet FAB styles
+  const fabWrapper =
+    "absolute left-1/2 -translate-x-1/2 -translate-y-3 top-0 pointer-events-none"; // positions above the bar
+  const fabBtn =
+    "pointer-events-auto h-[60px] w-[60px] rounded-full bg-white border-4 border-emerald-700 shadow-xl " +
+    "flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-white/60";
+  const fabActive =
+    "ring-4 ring-yellow-300 shadow-[0_10px_20px_rgba(0,0,0,0.25)] scale-[1.04]";
+  const fabInactive = "opacity-100";
 
   return (
     <nav
-      className="tap-safe fixed bottom-0 inset-x-0 z-40"
-      aria-label="Bottom navigation"
-      onKeyDown={onKeyDown}
-      onTouchEnd={onTouchEnd}
+      className={`fixed bottom-0 left-0 right-0 z-50 ${barBg} h-[74px] pb-[env(safe-area-inset-bottom)]`}
+      role="tablist"
+      aria-label="Primary"
+      onKeyDown={handleKey}
     >
-      <div className="relative mx-auto max-w-screen-sm">
-        {/* Bar */}
-        <div className="h-16 bg-emerald-800/95 backdrop-blur supports-[backdrop-filter]:bg-emerald-800/80 rounded-t-2xl shadow-xl border-t border-emerald-700/60">
-          <div className="grid grid-cols-5 h-full">
-            {/* Left: Budget */}
+      <div className="relative mx-auto max-w-screen-sm h-full">
+        {/* grid: leave center column empty for the raised wallet */}
+        <div className="grid grid-cols-5 h-full items-end">
+          {/* Budget */}
+          <div className="flex justify-center">
             <button
               type="button"
-              className={`${baseBtn} col-span-1`}
+              role="tab"
+              aria-selected={active === "budget"}
+              aria-label="Budget"
               onClick={() => setActive("budget")}
-              aria-current={active === "budget" ? "page" : undefined}
+              className={baseBtn}
             >
               <BarChart2
-                size={22}
+                size={24}
                 className={active === "budget" ? activeIcon : inactiveIcon}
               />
               <span
-                className={`text-[11px] font-medium ${
+                className={`text-xs font-medium ${
                   active === "budget" ? activeText : inactiveText
                 }`}
               >
                 Budget
               </span>
+              <span
+                className={`h-1 w-1 rounded-full mt-0.5 ${
+                  active === "budget" ? "bg-white" : "bg-transparent"
+                }`}
+              />
             </button>
+          </div>
 
-            {/* Left-mid: Summary */}
+          {/* Summary */}
+          <div className="flex justify-center">
             <button
               type="button"
-              className={`${baseBtn} col-span-1`}
+              role="tab"
+              aria-selected={active === "summary"}
+              aria-label="Summary"
               onClick={() => setActive("summary")}
-              aria-current={active === "summary" ? "page" : undefined}
+              className={baseBtn}
             >
               <PieChart
-                size={22}
+                size={24}
                 className={active === "summary" ? activeIcon : inactiveIcon}
               />
               <span
-                className={`text-[11px] font-medium ${
+                className={`text-xs font-medium ${
                   active === "summary" ? activeText : inactiveText
                 }`}
               >
                 Summary
               </span>
+              <span
+                className={`h-1 w-1 rounded-full mt-0.5 ${
+                  active === "summary" ? "bg-white" : "bg-transparent"
+                }`}
+              />
             </button>
+          </div>
 
-            {/* Center: Wallet FAB */}
-            <div className="col-span-1 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setActive("wallet")}
-                aria-current={active === "wallet" ? "page" : undefined}
-                className="tap-safe select-none -mt-6 h-14 w-14 rounded-full bg-emerald-500 shadow-lg ring-4 ring-emerald-900/40
-                           flex items-center justify-center active:scale-95 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-500"
-              >
-                {walletIconSrc ? (
-                  <img
-                    src={walletIconSrc}
-                    alt="Wallet"
-                    className="h-7 w-7 pointer-events-none"
-                    draggable={false}
-                  />
-                ) : (
-                  <WalletIcon
-                    size={26}
-                    className={
-                      active === "wallet"
-                        ? "text-white drop-shadow"
-                        : "text-white/95"
-                    }
-                  />
-                )}
-              </button>
-            </div>
+          {/* Spacer column for raised wallet */}
+          <div />
 
-            {/* Right-mid: Detailed */}
+          {/* Detailed */}
+          <div className="flex justify-center">
             <button
               type="button"
-              className={`${baseBtn} col-span-1`}
+              role="tab"
+              aria-selected={active === "detailed"}
+              aria-label="Detailed"
               onClick={() => setActive("detailed")}
-              aria-current={active === "detailed" ? "page" : undefined}
+              className={baseBtn}
             >
               <List
-                size={22}
+                size={24}
                 className={active === "detailed" ? activeIcon : inactiveIcon}
               />
               <span
-                className={`text-[11px] font-medium ${
+                className={`text-xs font-medium ${
                   active === "detailed" ? activeText : inactiveText
                 }`}
               >
                 Detailed
               </span>
+              <span
+                className={`h-1 w-1 rounded-full mt-0.5 ${
+                  active === "detailed" ? "bg-white" : "bg-transparent"
+                }`}
+              />
             </button>
-
-            {/* Right spacer (keeps grid balance) */}
-            <div className="col-span-1" />
           </div>
+
+          {/* Coming (disabled) */}
+          <div className="flex justify-center">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={active === "coming"}
+              aria-label="Coming soon"
+              disabled
+              className={`${baseBtn} opacity-50 cursor-not-allowed`}
+              title="Coming soon"
+            >
+              <Lock size={24} className="text-emerald-300/60" />
+              <span className="text-emerald-200/70 text-xs font-medium">
+                Coming
+              </span>
+              <span className="h-1 w-1 rounded-full mt-0.5 bg-transparent" />
+            </button>
+          </div>
+        </div>
+
+        {/* Raised Wallet FAB (center) */}
+        <div className={fabWrapper} aria-hidden={false}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={active === "wallet"}
+            aria-label="Wallet"
+            onClick={() => setActive("wallet")}
+            className={`${fabBtn} ${
+              active === "wallet" ? fabActive : fabInactive
+            }`}
+          >
+            {walletIconSrc ? (
+              <img
+                src={walletIconSrc}
+                alt="Wallet"
+                className="h-[34px] w-[34px] rounded-xl object-cover"
+                draggable="false"
+              />
+            ) : (
+              <WalletIcon
+                size={28}
+                className="text-emerald-700"
+                aria-hidden="true"
+              />
+            )}
+          </button>
         </div>
       </div>
     </nav>

@@ -41,7 +41,7 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
     <Modal open={open} onClose={onClose}>
       <h3 className="font-semibold mb-3">MONEY TIME! 💸</h3>
       <div
-        className="grid gap-3"
+        className="grid gap-3 tap-safe"
         onKeyDownCapture={(e) => {
           // Don’t let global key handlers swallow typing inside the modal
           e.stopPropagation();
@@ -59,6 +59,7 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
 
         <input
           type="number"
+          inputMode="decimal"
           className="input"
           placeholder="Amount"
           value={form.amount}

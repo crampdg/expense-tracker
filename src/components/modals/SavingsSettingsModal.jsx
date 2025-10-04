@@ -112,7 +112,7 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
       onClose={onClose}
       bodyClass="max-h-[min(80vh,calc(100dvh-140px))] overflow-y-auto pr-1 pb-[calc(env(safe-area-inset-bottom)+88px)] overscroll-contain"
     >
-      <div className="p-4 md:p-5">
+      <div className="p-4 md:p-5 tap-safe">
         <h3 className="text-lg font-semibold">Investments Settings</h3>
 
           <p className="mt-1 text-sm text-gray-600">
@@ -125,6 +125,7 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
             <label className="text-sm text-gray-700">Investment annual interest (APR, decimal)</label>
             <input
               type="number"
+              inputMode="decimal"
               step="0.001"
               min="0"
               value={form.investAPR ?? 0.04}
@@ -157,7 +158,7 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
 
           {showPaste && (
             <div className="mt-2">
-              <textarea ref={pasteRef} placeholder="Paste backup JSON here" className="w-full h-28 p-2 border border-gray-300 rounded-md text-sm"/>
+              <textarea ref={pasteRef} placeholder="Paste backup JSON here" className="w-full h-28 p-2 border border-gray-300 rounded-md text-base"/>
               <div className="mt-2 flex items-center justify-end">
                 <button className="px-3 py-1.5 rounded-md text-sm bg-emerald-600 text-white hover:bg-emerald-500" onClick={handleImportPaste}>Import</button>
               </div>
