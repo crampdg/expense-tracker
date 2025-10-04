@@ -177,51 +177,18 @@ export default function DetailedTab({
   const exportPDF = async () => {
     const filename = `transactions_${fileTimestamp()}.pdf`
     const el = exportContainerRef.current
-    // ensure the element has the expected id
     if (el && !el.id) el.id = EXPORT_ID
 
-    // Try your shared utils/pdfExport.js in multiple common signatures
     try {
       const mod = await import("../utils/pdfExport.js")
-      const variants = [
-        // (idString, filename)
-        async (fn) => fn.length >= 2 && (await fn(EXPORT_ID, filename), true),
-        // (#idString, filename)
-        async (fn) => fn.length >= 2 && (await fn("#" + EXPORT_ID, filename), true),
-        // (element, filename)
-        async (fn) => fn.length >= 2 && el && (await fn(el, filename), true),
-        // (idString)
-        async (fn) => fn.length === 1 && (await fn(EXPORT_ID), true),
-        // (#idString)
-        async (fn) => fn.length === 1 && (await fn("#" + EXPORT_ID), true),
-        // (element)
-        async (fn) => fn.length === 1 && el && (await fn(el), true),
-      ]
-
-      const names = [
-        "exportElementToPDF",
-        "exportElToPDF",
-        "exportTableToPDF",
-        "exportToPDF",
-        "exportPDF",
-        "default",
-      ].filter((k) => k in mod)
-
-      for (const name of names) {
-        const fn = mod[name]
-        if (typeof fn !== "function") continue
-        for (const tryCall of variants) {
-          try {
-            const ok = await tryCall(fn)
-            if (ok) { setExportOpen(false); return }
-          } catch (_) { /* try next variant */ }
-        }
-      }
+      await mod.exportElementToPDF?.(EXPORT_ID, filename)
+      setExportOpen(false)
+      return
     } catch (_) {
       // fall through to print dialog
     }
 
-    // Fallback: print dialog (still gives a real PDF when "Save as PDF" is chosen)
+    // Fallback: open a print-friendly window (user can "Save as PDF")
     const headers = ["Date","Type","Category","Amount","Desc"]
     const rowsHtml = exportRows.map(r => `
       <tr>
