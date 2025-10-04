@@ -18,7 +18,9 @@ export default function BudgetTab({
   periodOffset,
   setPeriodOffset,
   onBulkRenameTransactions,
+  showUndoToast, // NEW
 }) {
+
   const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const isBlank = (s) => !s || !s.trim();
 
@@ -137,7 +139,14 @@ export default function BudgetTab({
     const originalItem = !isNew ? normBudgets[section][index] : null;
     const oldName = originalItem?.category ?? "";
     const oldNorm = norm(oldName);
+    const oldAmount = Number(originalItem?.amount ?? 0);
+    const newAmount = Number(form.amount ?? 0);
+
     const renamed = !isNew && newNorm !== oldNorm;
+    const amountChanged = !isNew && oldAmount !== newAmount;
+
+    // keep a snapshot for Undo
+    const snapshot = JSON.parse(JSON.stringify(normBudgets));
 
     pushHistory();
     setBudgets((prev) => {
@@ -149,47 +158,95 @@ export default function BudgetTab({
           const mergedAmount = Number(arr[existingIdx].amount || 0) + Number(form.amount || 0);
           arr[existingIdx] = { category: newName, amount: mergedAmount };
         } else {
-          arr.push({ category: newName, amount: Number(form.amount) || 0 });
+          arr.push({ category: newName, amount: newAmount });
         }
       } else {
         const existingIdx = arr.findIndex((r, i) => i !== index && norm(r.category) === newNorm);
         if (existingIdx !== -1) {
-          const mergedAmount = Number(arr[existingIdx].amount || 0) + Number(form.amount || 0);
+          const mergedAmount = Number(arr[existingIdx].amount || 0) + newAmount;
           arr[existingIdx] = { category: newName, amount: mergedAmount };
           arr.splice(index, 1);
         } else {
-          arr[index] = { category: newName, amount: Number(form.amount) || 0 };
+          arr[index] = { category: newName, amount: newAmount };
         }
       }
 
       return { ...prev, [section]: arr };
     });
 
+    // forward rename to transactions if requested
     if (renamed && scope !== "none") {
       onBulkRenameTransactions?.({
         section,
         oldName,
         newName,
-        scope, // 'all' or 'period'
+        scope, // 'all' | 'period'
         startISO,
         endISO,
       });
     }
+
+    // --- Undo toast logic ---
+    if (renamed) {
+      // rename toast (already had this behavior)
+      showUndoToast?.(
+        `Renamed “${oldName || "Untitled"}” → “${newName}”`,
+        () => {
+          // revert budget snapshot
+          setBudgets(snapshot);
+          // reverse the transaction rename if one was applied
+          if (scope !== "none") {
+            onBulkRenameTransactions?.({
+              section,
+              oldName: newName,
+              newName: oldName,
+              scope,
+              startISO,
+              endISO,
+            });
+          }
+        }
+      );
+    } else if (isNew) {
+      // new row added
+      showUndoToast?.(
+        `Added “${newName}” to ${section === "inflows" ? "Inflows" : "Outflows"}`,
+        () => setBudgets(snapshot)
+      );
+    } else if (amountChanged) {
+      // amount-only edit
+      showUndoToast?.(
+        `Updated “${newName}” • ${money(oldAmount)} → ${money(newAmount)}`,
+        () => setBudgets(snapshot)
+      );
+    }
+
     setEditing(null);
   };
 
+
+
   const deleteRow = ({ section, index, isNew }) => {
     if (isNew) { setEditing(null); return; }
-    pushHistory();
+    const snapshot = JSON.parse(JSON.stringify(normBudgets))
+    const removed = normBudgets?.[section]?.[index]
+
+    pushHistory()
     setBudgets((prev) => {
-      const next = { ...prev };
-      const arr = [...(prev?.[section] ?? [])];
-      arr.splice(index, 1);
-      next[section] = arr;
-      return next;
-    });
-    setEditing(null);
+      const next = { ...prev }
+      const arr = [...(prev?.[section] ?? [])]
+      arr.splice(index, 1)
+      next[section] = arr
+      return next
+    })
+    setEditing(null)
+
+    showUndoToast?.(
+      `Deleted “${removed?.category ?? 'Budget line'}”`,
+      () => setBudgets(snapshot)
+    )
   };
+
 
   const claimRow = ({ section, index, isNew }, form) => {
     saveRow({ section, index, isNew }, form, "none");

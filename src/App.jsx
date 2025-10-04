@@ -10,7 +10,7 @@ import MoneyTimeModal from './components/modals/MoneyTimeModal.jsx'
 import BudgetEditModal from './components/modals/BudgetEditModal.jsx'
 import TransactionEditModal from './components/modals/TransactionEditModal.jsx'
 import BottomNav from './components/ui/BottomNav.jsx'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 
 
 function App() {
@@ -20,6 +20,16 @@ function App() {
   const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
   const [showTransactionEditModal, setShowTransactionEditModal] = useState(false)
   const [periodOffset, setPeriodOffset] = useState(0)
+
+  // ---- Global Undo Toast ----
+  const [toast, setToast] = useState(null) // { message, onUndo?: fn }
+  const toastTimerRef = useRef(null)
+  function showUndoToast(message, onUndo) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast({ message, onUndo })
+    toastTimerRef.current = setTimeout(() => setToast(null), 6000)
+  }
+
 
   
   const [transactions, setTransactions] = useState(() => {
@@ -113,7 +123,6 @@ function App() {
     const txWithId = { id: Date.now(), ...transaction }
     setTransactions([...transactions, txWithId])
 
-
     // Auto-add category into budget if missing
     if (transaction.type === 'inflow') {
       if (!budget.inflows.some(i => i.category === transaction.category)) {
@@ -130,7 +139,10 @@ function App() {
         }))
       }
     }
+
+    return txWithId
   }
+
 
 
   const handleEditTransaction = (updatedTransaction) => {
@@ -214,20 +226,24 @@ function App() {
 
 
   const handleClaimBudget = (section, index, { category, amount }) => {
-    // build a real transaction from the budget row
     const tx = {
-      type: section === "inflows" ? "inflow" : "expense",
-      category: (category ?? "").trim() || "Untitled",
+      type: section === 'inflows' ? 'inflow' : 'expense',
+      category: (category ?? '').trim() || 'Untitled',
       amount: Number(amount) || 0,
-      date: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
-    };
+      date: new Date().toISOString().slice(0, 10),
+    }
 
-    // reuse your existing add flow (also auto-adds missing budget rows)
-    handleAddTransaction(tx);  // persists + auto-adds category to budget for new cats. :contentReference[oaicite:1]{index=1}
+    const newTx = handleAddTransaction(tx)
+    setActiveTab('wallet') // jump to Wallet so it’s visible immediately
 
-    // hop to Wallet so the user sees it immediately
-    setActiveTab("wallet");  // valid tab key per BottomNav. :contentReference[oaicite:2]{index=2}
-  };
+    showUndoToast(`Added to Wallet • ${tx.category}`, () => {
+      // remove the just-added tx
+      if (newTx?.id != null) {
+        handleDeleteTransaction(newTx.id)
+      }
+    })
+  }
+
 
 
   return (
@@ -251,6 +267,8 @@ function App() {
             periodOffset={periodOffset}
             setPeriodOffset={setPeriodOffset}
             onBulkRenameTransactions={onBulkRenameTransactions}
+            showUndoToast={showUndoToast}
+
           />
         )}
 
@@ -281,7 +299,25 @@ function App() {
 
       </div>
 
+      {/* Undo Toast */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50">
+          <div className="flex items-center gap-3 bg-gray-900 text-white rounded-full px-4 py-2 shadow-lg">
+            <span className="text-sm">{toast.message}</span>
+            {toast.onUndo && (
+              <button
+                className="text-emerald-300 underline underline-offset-4"
+                onClick={() => { toast.onUndo?.(); setToast(null); }}
+              >
+                Undo
+              </button>
+            )}
+            <button className="opacity-70 hover:opacity-100" onClick={() => setToast(null)}>✕</button>
+          </div>
+        </div>
+      )}
       <BottomNav active={activeTab} setActive={setActiveTab} walletIconSrc={walletLogo} />
+
 
       {/* Modals */}
       {showSpendModal && (
