@@ -1,4 +1,5 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+
 import {
   ResponsiveContainer,
   BarChart,
@@ -16,9 +17,14 @@ import ExportPDFButton from "./ui/ExportPDFButton.jsx"
 import SharePDFButton from "./ui/SharePDFButton.jsx"
 import { money } from "../utils/format.js"
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils"
+import Button from "./ui/Button.jsx"
 
-export default function SummaryTab({ transactions, budget, period, periodOffset }) {
+export default function SummaryTab({ transactions, budget, period, periodOffset, setPeriodOffset, setPeriod }) {
+
   const txs = Array.isArray(transactions) ? transactions : []
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const canAdjustPeriod = typeof setPeriodOffset === "function"
 
   // Period from shared state (synced with Budget tab)
   const effectivePeriod = useMemo(() => {
@@ -200,19 +206,66 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
 
   return (
     <div className="space-y-4" id="summary-tab">
-      {/* Compact header */}
-      <div className="flex items-start justify-between">
-        <div className="text-sm text-gray-600">
-          <div className="font-semibold">{effectivePeriod.type} Summary</div>
-          <div>
-            {offsetStart.toDateString()} – {offsetEnd.toDateString()}
+      {/* Header (mirrors Budget tab) */}
+      <Card className="p-3 md:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-tight">{effectivePeriod.type} Summary</h2>
+            <div className="text-[11px] md:text-xs text-gray-600">
+              {offsetStart.toDateString()} – {offsetEnd.toDateString()}
+            </div>
+          </div>
+
+          <div className="relative">
+            <Button
+              type="button"
+              variant="ghost"
+              className="!px-2 !py-1"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title="More"
+            >
+              ⋯
+            </Button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-md z-20">
+                <div className="px-2 py-1.5">
+                  <ExportPDFButton targetId="summary-tab" filename={`${filePrefix}_Summary.pdf`} compact />
+                </div>
+                <div className="px-2 py-1 border-t border-gray-100">
+                  <SharePDFButton targetId="summary-tab" filename={`${filePrefix}_Summary.pdf`} compact />
+                </div>
+              </div>
+            )}
           </div>
         </div>
-        <div className="flex gap-2">
-          <ExportPDFButton targetId="summary-tab" filename={`${filePrefix}_Summary.pdf`} />
-          <SharePDFButton targetId="summary-tab" filename={`${filePrefix}_Summary.pdf`} />
+
+        {/* Period arrows */}
+        <div className="mt-2 flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            className="!px-2 !py-1 text-sm"
+            onClick={() => canAdjustPeriod && setPeriodOffset((o) => o - 1)}
+            disabled={!canAdjustPeriod}
+            title="Previous"
+          >
+            ←
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="!px-2 !py-1 text-sm"
+            onClick={() => canAdjustPeriod && setPeriodOffset((o) => o + 1)}
+            disabled={!canAdjustPeriod}
+            title="Next"
+          >
+            →
+          </Button>
         </div>
-      </div>
+      </Card>
+
 
       {/* Stat strip */}
       <div className="grid grid-cols-3 gap-2">
