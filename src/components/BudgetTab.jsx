@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { calcPeriodEnd, getAnchoredPeriodStart } from "../utils/periodUtils";
 import Card from "./ui/Card.jsx";
 import Button from "./ui/Button.jsx";
-import BudgetEditModal from "../modals/BudgetEditModal.jsx";
+import BudgetEditModal from "./modals/BudgetEditModal.jsx";
 import { money } from "../utils/format.js";
 import ExportPDFButton from "./ui/ExportPDFButton.jsx";
 import SharePDFButton from "./ui/SharePDFButton.jsx";
