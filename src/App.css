@@ -40,3 +40,35 @@
 .read-the-docs {
   color: #888;
 }
+
+/* === iOS zoom & gesture guards (app-level) === */
+
+/* Prevent Safari auto text zoom and keep the page scale stable */
+html, body {
+  height: 100%;
+  touch-action: manipulation;   /* prefer taps; dissuade double-tap zoom */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Ensure interactive controls are >=16px so iOS won’t zoom on focus */
+input, select, textarea, button {
+  font-size: 16px; /* mirrors rule in index.css; duplication is OK/safe */
+}
+
+/* Utility: add to any clickable to opt-in explicitly */
+.tap-safe {
+  touch-action: manipulation;
+}
+
+/* Keep modals stable during open/close transitions */
+.modal-stable {
+  will-change: transform, opacity;
+  contain: layout paint style;
+}
+
+/* Avoid scroll chaining/elastic bounce behind modals */
+.modal-backdrop,
+.modal-root {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}

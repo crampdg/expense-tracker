@@ -2,20 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ---------- Base tweaks ---------- */
+/* ---------- iOS zoom + gesture guards ---------- */
+/* Prevent Safari auto-text zooming and maintain consistent scale */
+:root { -webkit-text-size-adjust: 100%; }
+
+/* Base surface + text color */
 html, body, #root { @apply bg-gray-50 text-gray-900; }
+
+/* Remove blue tap highlight on iOS */
 * { -webkit-tap-highlight-color: transparent; }
+
+/* Keep interactive controls >=16px to stop iOS input-focus zoom */
+input, select, textarea, button {
+  font-size: 16px; /* Tailwind alt: text-[16px] */
+}
+
+/* Safer taps: hint the browser no double-tap zoom needed on clickables */
+button, [role="button"], a, .btn, .tap-safe {
+  touch-action: manipulation;
+}
+
+/* Optional: reduce overscroll chain to avoid layout jump under modals */
+body { overscroll-behavior-y: contain; }
 
 /* ---------- Cards ---------- */
 .card { @apply bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-6; }
 
 /* ---------- Inputs / Selects ---------- */
 .input {
-  @apply border border-gray-300 rounded-lg p-2 md:p-2.5 text-sm w-full bg-white placeholder-gray-400
+  /* Was text-sm; bump base size to avoid iOS zoom, keep md breakpoint smaller if you like */
+  @apply border border-gray-300 rounded-lg p-2 md:p-2.5 text-base md:text-sm w-full bg-white placeholder-gray-400
          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
 }
 .select {
-  @apply border border-gray-300 rounded-lg p-2 md:p-2.5 text-sm bg-white
+  @apply border border-gray-300 rounded-lg p-2 md:p-2.5 text-base md:text-sm bg-white
          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
 }
 

@@ -1,58 +1,92 @@
+// src/components/ui/Button.jsx
+import React, { useRef, useCallback } from "react";
+
+/**
+ * Button
+ *
+ * Props:
+ *  - as?: React.ElementType (default: 'button')
+ *  - type?: 'button' | 'submit' | 'reset' (default: 'button')
+ *  - variant?: 'primary' | 'ghost' | 'subtle' | 'danger' (optional; just adds sensible defaults)
+ *  - size?: 'sm' | 'md' | 'lg' (default: 'md')
+ *  - noMinHitArea?: boolean (default: false)  // if true, removes the 44px min size
+ *  - suppressDoubleTap?: boolean (default: true) // prevents iOS double-tap zoom
+ *  - className?: string
+ *  - disabled?: boolean
+ *  - children?: React.ReactNode
+ *  - ...rest (forwarded)
+ *
+ * Notes:
+ *  - Adds `.tap-safe` so CSS `touch-action: manipulation` applies.
+ *  - Forces text to 16px to prevent iOS input-focus zoom (also set globally).
+ *  - Provides a ≥44px hit area by default (iOS HIG).
+ */
 export default function Button({
-  className = "",
-  variant = "primary", // "primary" | "ghost" | "outline" | "danger" | "subtle"
-  size = "md",         // "sm" | "md" | "lg"
-  loading = false,
-  disabled = false,
+  as: Tag = "button",
   type = "button",
+  variant,
+  size = "md",
+  noMinHitArea = false,
+  suppressDoubleTap = true,
+  className = "",
+  disabled,
   children,
-  ...props
+  ...rest
 }) {
+  const lastTouchEndRef = useRef(0);
+
+  const onTouchEnd = useCallback(
+    (e) => {
+      if (!suppressDoubleTap) return;
+      const now = Date.now();
+      if (now - lastTouchEndRef.current < 300) {
+        // Prevent iOS double-tap zoom
+        e.preventDefault();
+      }
+      lastTouchEndRef.current = now;
+    },
+    [suppressDoubleTap]
+  );
+
   const base =
-    "inline-flex items-center justify-center select-none rounded-2xl font-medium shadow-sm " +
-    "transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 " +
-    "disabled:opacity-60 disabled:cursor-not-allowed";
+    "tap-safe inline-flex items-center justify-center select-none rounded-xl font-medium " +
+    "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 " +
+    (disabled ? "opacity-50 cursor-not-allowed " : "active:scale-[0.98] ");
 
-  const sizes = {
-    sm: "text-xs px-2.5 py-1.5",
-    md: "text-sm px-3.5 py-2.5",
-    lg: "text-base px-4.5 py-3",
+  const minArea = noMinHitArea ? "" : " min-h-[44px] min-w-[44px]";
+  const textSize = " text-[16px]"; // avoid iOS zoom on focus
+
+  const sizeMap = {
+    sm: " px-3 py-1.5",
+    md: " px-4 py-2",
+    lg: " px-5 py-3",
   };
 
-  const variants = {
-    primary:
-      "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 focus:ring-blue-500",
-    ghost:
-      "bg-white text-gray-800 border border-gray-300 hover:bg-gray-50 active:bg-gray-100 focus:ring-gray-300",
-    outline:
-      "bg-transparent text-gray-800 border border-gray-300 hover:bg-gray-50 active:bg-gray-100 focus:ring-gray-300",
-    danger:
-      "bg-red-600 text-white hover:bg-red-700 active:bg-red-800 focus:ring-red-500",
-    subtle:
-      "bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300 focus:ring-gray-300",
+  const variantMap = {
+    primary: " bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-sm",
+    ghost: " bg-white text-gray-800 border border-gray-300 hover:bg-gray-50",
+    subtle: " bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border border-emerald-200",
+    danger: " bg-red-600 text-white hover:bg-red-700 active:bg-red-800 shadow-sm",
   };
 
-  const cls = [
-    base,
-    sizes[size] || sizes.md,
-    variants[variant] || variants.primary,
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const variantCls = variant ? variantMap[variant] || "" : "";
+  const sizeCls = sizeMap[size] || sizeMap.md;
 
-  // One unified click handler is enough; relying on onClick avoids double-firing on mobile
-  const isDisabled = disabled || loading;
+  const classes = `${base}${minArea}${textSize}${sizeCls} ${variantCls} ${className}`.trim();
+
+  // If developer uses <Button as="a" .../>, omit 'type'
+  const tagProps = Tag === "button" ? { type } : {};
 
   return (
-    <button
-      type={type}
-      className={cls}
-      disabled={isDisabled}
-      aria-busy={loading ? "true" : "false"}
-      {...props}
+    <Tag
+      className={classes}
+      onTouchEnd={onTouchEnd}
+      aria-disabled={disabled || undefined}
+      disabled={Tag === "button" ? disabled : undefined}
+      {...tagProps}
+      {...rest}
     >
-      {loading ? "…" : children}
-    </button>
+      {children}
+    </Tag>
   );
 }

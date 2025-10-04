@@ -4,17 +4,49 @@
 <head>
   <meta charset="utf-8" />
   <link rel="icon" href="%PUBLIC_URL%/icon.png" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+
   <meta name="theme-color" content="#000000" />
   <meta name="description" content="Blehxpenses - Track your expenses with style" />
   <link rel="apple-touch-icon" href="%PUBLIC_URL%/icon.png" />
   <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <title>Blehxpenses</title>
+  <meta name="format-detection" content="telephone=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
+
 
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
   <div id="root"></div>
+  <script>
+    (function () {
+      // Prevent pinch-zoom (multi-touch) and Safari "gesturestart"
+      document.addEventListener('touchstart', function (e) {
+        if (e.touches && e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
+      document.addEventListener('gesturestart', function (e) {
+        e.preventDefault();
+      });
+
+      // Prevent double-tap zoom
+      var lastTouchEnd = 0;
+      document.addEventListener('touchend', function (e) {
+        var now = Date.now();
+        if (now - lastTouchEnd < 300) {
+          e.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, { passive: false });
+
+      // Also block double-click zoom (some browsers)
+      document.addEventListener('dblclick', function (e) {
+        e.preventDefault();
+      });
+    })();
+  </script>
 </body>
+
 
 </html>
