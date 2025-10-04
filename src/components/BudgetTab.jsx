@@ -68,6 +68,24 @@ export default function BudgetTab({
   const [drag, setDrag] = useState(null);
   const [indicator, setIndicator] = useState(null); // {section, path, pos: 'above'|'below'}
   const [hoverParent, setHoverParent] = useState(null); // {section, path}
+
+  // Collapse/expand parents
+  const [collapsed, setCollapsed] = useState(new Set());
+  const isCollapsed = (section, path) => collapsed.has(keyFor(section, path));
+  const toggleCollapse = (section, path) =>
+    setCollapsed((s) => {
+      const k = keyFor(section, path);
+      const ns = new Set(s);
+      ns.has(k) ? ns.delete(k) : ns.add(k);
+      return ns;
+    });
+
+  // Inline “Move under…” UI state
+  const [moveKey, setMoveKey] = useState(null);     // e.g., "inflows:3"
+  const [moveChoice, setMoveChoice] = useState(""); // selected parent name or "__new__"
+  const [moveNewParent, setMoveNewParent] = useState(""); // typed new parent
+
+
   const longPressTimer = useRef(null);
   const rowRefs = useRef(new Map()); // key "section:1.2" -> {el, depth}
 
@@ -190,6 +208,18 @@ export default function BudgetTab({
   const getItemAtPath = (section, path) => (path.length === 1 ? getArray(section)[path[0]] : getArray(section)[path[0]]?.children?.[path[1]] ?? null);
   const setArray = (section, newArr) => setBudgets((prev) => ({ ...prev, [section]: newArr }));
 
+
+  // List of existing top-level parents (unique), excluding a given name
+  const parentNames = (section, excludeName = "") =>
+    Array.from(
+      new Set(
+        getArray(section)
+          .map((r) => r.category)
+          .filter((n) => n && norm(n) !== norm(excludeName))
+      )
+    );
+
+    
   const removeAtPath = (arr, path) => {
     const clone = JSON.parse(JSON.stringify(arr));
     let removed = null;
@@ -218,6 +248,34 @@ export default function BudgetTab({
     return clone;
   };
 
+  // Turn any existing category into a sub of a parent (by name). One-level hierarchy only.
+  const moveRowToParent = (section, fromPath, parentName) => {
+    const snapshot = JSON.parse(JSON.stringify(budgets));
+    let arr = getArray(section);
+    const { removed, next } = removeAtPath(arr, fromPath);
+    arr = next;
+
+    // ensure parent exists (create if needed)
+    let pIdx = arr.findIndex(r => norm(r.category) === norm(parentName));
+    if (pIdx === -1) {
+      arr.push({ category: parentName, amount: 0, auto: false, children: [] });
+      pIdx = arr.length - 1;
+    }
+    if (!arr[pIdx].children) arr[pIdx].children = [];
+
+    // if the moved item had children, lift them to top level to keep 1-level depth
+    if (removed.children?.length) {
+      arr = [...arr, ...removed.children.map(c => ({ ...c, amount: 0, children: [] }))];
+    }
+
+    // add the moved item as a child (no budget on subs)
+    arr[pIdx].children.push({ category: removed.category, amount: 0, auto: !!removed.auto, children: [] });
+
+    setArray(section, arr);
+    showUndoToast?.(`Moved “${removed.category}” under “${parentName}”`, () => setBudgets(snapshot));
+  };
+
+
   // -------------------- Save/Delete/Claim --------------------
   const saveRow = ({ section, path, isNew, isSub }, form, scope = "none") => {
     const newName = (form.category || "").trim() || "Untitled";
@@ -234,6 +292,45 @@ export default function BudgetTab({
 
     const snapshot = JSON.parse(JSON.stringify(budgets));
     pushHistory();
+
+    // (A) If creating a sub via the "+ Sub" button
+    if (isNew && isSub) {
+      const parentIdx = path[0];
+      const arr = JSON.parse(JSON.stringify(getArray(section)));
+      if (!arr[parentIdx].children) arr[parentIdx].children = [];
+      arr[parentIdx].children.push({ category: newName, amount: 0, auto: false, children: [] });
+      setArray(section, arr);
+      showUndoToast?.(`Added “${newName}” as a subcategory`, () => setBudgets(snapshot));
+      setEditing(null);
+      return;
+    }
+
+    // (B) Quick nest/move with "Parent > Child"
+    const parts = newName.split(">").map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      let base = getArray(section);
+
+      // If renaming an existing row, remove it from its current spot first
+      if (!isNew) {
+        const removed = removeAtPath(base, path);
+        base = removed.next;
+      }
+
+      const parentName = parts[0];
+      const childName = parts.slice(1).join(" > ");
+      let pIdx = base.findIndex(r => norm(r.category) === norm(parentName));
+      if (pIdx === -1) {
+        base = [...base, { category: parentName, amount: 0, auto: false, children: [] }];
+        pIdx = base.length - 1;
+      }
+      if (!base[pIdx].children) base[pIdx].children = [];
+      base[pIdx].children.push({ category: childName, amount: 0, auto: false, children: [] });
+      setArray(section, base);
+      showUndoToast?.(`Nested “${childName}” under “${parentName}”`, () => setBudgets(snapshot));
+      setEditing(null);
+      return;
+    }
+
 
     const update = (sectionArr) => {
       if (isNew) {
@@ -498,12 +595,117 @@ export default function BudgetTab({
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 select-none">⋮⋮</span>
-                <span>
+                {/* collapse/expand for parents */}
+                {depth === 0 && item.children?.length ? (
+                  <button
+                    type="button"
+                    className="text-gray-400"
+                    onClick={(e) => { e.stopPropagation(); toggleCollapse(section, path); }}
+                    title={isCollapsed(section, path) ? "Expand" : "Collapse"}
+                    aria-label={isCollapsed(section, path) ? "Expand subcategories" : "Collapse subcategories"}
+                  >
+                    {isCollapsed(section, path) ? "▸" : "▾"}
+                  </button>
+                ) : null}
+
+                <span className="ml-1">
                   {item.category}
                   {item.auto ? (
                     <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">auto</span>
                   ) : null}
                 </span>
+
+                {/* quick move (no-drag): inline selector instead of prompt */}
+                {depth === 0 ? (() => {
+                  const thisKey = keyFor(section, path);
+                  const isOpen = moveKey === thisKey;
+                  const parents = parentNames(section, item.category);
+                  return !isOpen ? (
+                    <button
+                      type="button"
+                      className="ml-2 text-[11px] text-blue-600 hover:underline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoveKey(thisKey);
+                        setMoveChoice(parents[0] ?? "");
+                        setMoveNewParent("");
+                      }}
+                      title="Move under parent"
+                    >
+                      ↳ Move
+                    </button>
+                  ) : (
+                    <span className="ml-2 inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <select
+                        className="border rounded px-1 py-[2px] text-[11px]"
+                        value={moveChoice}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setMoveChoice(v);
+                          if (v && v !== "__new__") {
+                            moveRowToParent(section, path, v);
+                            setMoveKey(null);
+                          } else {
+                            setMoveNewParent("");
+                          }
+                        }}
+                      >
+                        {parents.length ? parents.map((p) => <option key={p} value={p}>{p}</option>) : null}
+                        <option value="__new__">+ New parent…</option>
+                      </select>
+
+                      {moveChoice === "__new__" ? (
+                        <>
+                          <input
+                            className="border rounded px-1 py-[2px] text-[11px]"
+                            placeholder="Parent name"
+                            value={moveNewParent}
+                            onChange={(e) => setMoveNewParent(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="text-[11px] px-1 py-[2px] border rounded"
+                            onClick={() => {
+                              const v = moveNewParent.trim();
+                              if (!v) return;
+                              moveRowToParent(section, path, v);
+                              setMoveKey(null);
+                            }}
+                            title="Confirm move"
+                          >
+                            ✔
+                          </button>
+                        </>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        className="text-[11px] px-1 py-[2px] border rounded"
+                        onClick={() => { setMoveKey(null); }}
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  );
+                })() : null}
+
+
+                {depth === 0 ? (
+                  <button
+                    type="button"
+                    className="ml-2 text-[11px] text-blue-600 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Open editor prepped to create a subcategory under this parent
+                      setEditing({ section, path, isNew: true, isSub: true });
+                    }}
+                    title="Add subcategory"
+                  >
+                    + Sub
+                  </button>
+                ) : null}
+
               </div>
             </td>
             <td className="px-4 py-2 text-right tabular-nums">{isSub ? "" : money(Number(item.amount || 0))}</td>
@@ -518,7 +720,8 @@ export default function BudgetTab({
             </tr>
           ) : null}
 
-          {item.children?.map((c, j) => renderRow(c, j, 1, path))}
+          {!isCollapsed(section, path) ? item.children?.map((c, j) => renderRow(c, j, 1, path)) : null}
+
         </>
       );
     };
