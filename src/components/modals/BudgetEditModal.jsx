@@ -14,254 +14,212 @@ import { useState, useEffect, useMemo } from 'react'
  * - onDelete()
  * - onClaim(form)
  */
+
 export default function BudgetEditModal({
   open,
   onClose,
   item,
-  isNew = false,
+  isNew,
   parents = [],
   currentParent = null,
   onSave,
   onDelete,
-  onClaim
+  onClaim,
 }) {
-  const [form, setForm] = useState({ category: '', amount: '', parent: '', type: '' })
-  const [stage, setStage] = useState('edit') // 'edit' | 'rename'
-  const [renameScope, setRenameScope] = useState('all') // default A
+  const section = (item?.section || '').toString().toLowerCase()
+  const isOutflows = section === 'outflows'
 
-  // Normalize section label (for rename copy)
-  const sectionLabel = (() => {
-    const s = (item?.section || '').toString().toLowerCase()
-    if (s === 'inflows') return 'Inflows'
-    if (s === 'outflows') return 'Outflows'
-    return null
-  })()
+  // ------- Local state -------
+  const [form, setForm] = useState({
+    category: '',
+    amount: '',
+    parent: '', // '' => top-level
+    type: '',   // 'fixed' | 'variable' (outflows only; top-level only)
+  })
+  const [renameScope, setRenameScope] = useState('all') // "all" | "period" | "none"
 
-  const normalize = (s) =>
-    (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
-
-  // Re-init form only when the modal opens or the selected row truly changes
-  const itemKey = item ? `${item.section || ''}::${item.category || ''}::${item.amount ?? ''}` : '';
+  // When the modal opens or the selected row changes, re-init the form
+  const itemKey = item ? `${item.section || ''}::${item.category || ''}::${item.amount ?? ''}` : ''
   useEffect(() => {
-    if (!open || !item) return;
+    if (!open || !item) return
     setForm({
       category: item.category || '',
       amount: item.amount ?? '',
       parent: currentParent || '', // '' => top-level
-      type: ((item?.section || '').toString().toLowerCase() === 'outflows')
-        ? (item?.type === 'fixed' ? 'fixed' : 'variable')
-        : ''
-    });
-    setStage('edit');
-    setRenameScope('all');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, currentParent, itemKey]);
+      type: isOutflows ? (item?.type === 'fixed' ? 'fixed' : 'variable') : '',
+    })
+    setRenameScope('all')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, itemKey])
 
+  const parentIsSelected = !!form.parent && form.parent.trim().length > 0
+  const showTypeSelector = isOutflows && !parentIsSelected // only for top-level outflows
 
-  const originalCategory = item?.category ?? ''
-  const hasParent = (form.parent ?? '').trim().length > 0
-
-  const categoryChanged = useMemo(() => {
-    if (isNew) return false
-    return normalize(form.category) !== normalize(originalCategory)
-  }, [form.category, originalCategory, isNew])
-
-  const numberAmount = useMemo(() => {
-    if (hasParent) return 0 // subs ignore amount
-    const n = typeof form.amount === 'string' ? form.amount.trim() : form.amount
-    const num = Number(n)
-    return Number.isFinite(num) ? num : NaN
-  }, [form.amount, hasParent])
-
-  const canSave =
-    (form.category ?? '').trim().length > 0 &&
-    (!hasParent ? Number.isFinite(numberAmount) : true)
-
-  function handlePrimarySave() {
-    if (!canSave) return
-    if (!isNew && categoryChanged) {
-      setStage('rename') // ask scope
-    } else {
-      onSave?.(
-        {
-          category: form.category.trim(),
-          amount: hasParent ? 0 : numberAmount,
-          parent: hasParent ? form.parent.trim() : null,
-          type: ((item?.section || '').toString().toLowerCase() === 'outflows' && !hasParent)
-            ? (form.type === 'fixed' ? 'fixed' : 'variable')
-            : undefined
-        },
-        'none'
-      )
+  const handleSave = () => {
+    const payload = {
+      category: (form.category || '').trim() || 'Untitled',
+      // Top-level rows can set amount; sub-rows always have amount=0 and sum via children
+      amount: parentIsSelected ? 0 : Number(form.amount || 0),
+      parent: parentIsSelected ? form.parent : null,
+      ...(isOutflows ? { type: showTypeSelector ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined } : {}),
     }
+    onSave?.(payload, renameScope)
+    onClose?.()
   }
 
-  function applyRename() {
-    onSave?.(
-      {
-        category: form.category.trim(),
-        amount: hasParent ? 0 : numberAmount,
-        parent: hasParent ? form.parent.trim() : null,
-        type: ((item?.section || '').toString().toLowerCase() === 'outflows' && !hasParent)
-          ? (form.type === 'fixed' ? 'fixed' : 'variable')
-          : undefined
-      },
-      renameScope
-    )
+  const handleDelete = () => {
+    onDelete?.()
+    onClose?.()
   }
+
+  const handleClaim = () => {
+    // Claim only really makes sense for top-level lines
+    const payload = {
+      category: (form.category || '').trim() || 'Untitled',
+      amount: Number(form.amount || 0),
+      parent: null,
+      ...(isOutflows ? { type: showTypeSelector ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined } : {}),
+    }
+    onClaim?.(payload)
+    onClose?.()
+  }
+
+  // --------- UI helpers ----------
+  const ParentSelect = (
+    <div className="grid grid-cols-1 gap-2">
+      <label className="text-xs text-gray-600">Parent</label>
+      <select
+        className="select"
+        value={form.parent}
+        onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))}
+      >
+        <option value="">None (top-level)</option>
+        {parents.map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+      {isOutflows && parentIsSelected ? (
+        <p className="text-[11px] text-gray-500">
+          Subcategories inherit their parent’s type (Fixed/Variable).
+        </p>
+      ) : null}
+    </div>
+  )
+
+  const TypeSelector = showTypeSelector ? (
+    <div className="grid grid-cols-1 gap-2">
+      <label className="text-xs text-gray-600">Type</label>
+      <div className="flex items-center gap-2">
+        <label className="inline-flex items-center gap-1 text-sm">
+          <input
+            type="radio"
+            name="outflow-type"
+            value="fixed"
+            checked={form.type === 'fixed'}
+            onChange={() => setForm((f) => ({ ...f, type: 'fixed' }))}
+          />
+          Fixed
+        </label>
+        <label className="inline-flex items-center gap-1 text-sm">
+          <input
+            type="radio"
+            name="outflow-type"
+            value="variable"
+            checked={form.type !== 'fixed'}
+            onChange={() => setForm((f) => ({ ...f, type: 'variable' }))}
+          />
+          Variable
+        </label>
+      </div>
+      <p className="text-[11px] text-gray-500">
+        Fixed = predictable, scheduled bills. Variable = everything else.
+      </p>
+    </div>
+  ) : null
+
+  const AmountField = (
+    <div className="grid grid-cols-1 gap-2">
+      <label className="text-xs text-gray-600">Amount</label>
+      <input
+        className="input"
+        type="number"
+        step="0.01"
+        inputMode="decimal"
+        value={form.amount}
+        onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+        disabled={parentIsSelected}
+      />
+      {parentIsSelected ? (
+        <p className="text-[11px] text-gray-500">
+          Amount is disabled for subcategories; totals roll up to the parent.
+        </p>
+      ) : null}
+    </div>
+  )
+
+  const RenameScope = (
+    <div className="grid grid-cols-1 gap-2">
+      <label className="text-xs text-gray-600">Rename scope</label>
+      <select
+        className="select"
+        value={renameScope}
+        onChange={(e) => setRenameScope(e.target.value)}
+      >
+        <option value="all">All time (rename matching transactions)</option>
+        <option value="period">This period only</option>
+        <option value="none">Don’t rename transactions</option>
+      </select>
+    </div>
+  )
 
   return (
-    <Modal open={open} onClose={onClose}>
-      {stage === 'edit' ? (
-        <>
-          <h3 className="font-semibold mb-3">
-            {isNew ? 'Add Budget Line' : `Edit ${item?.category}`}
-          </h3>
-
-          <div className="grid gap-3 tap-safe">
+    <Modal open={open} onClose={onClose} title={isNew ? "Add budget line" : "Edit budget line"}>
+      {!item ? null : (
+        <div className="space-y-4">
+          {/* Category */}
+          <div className="grid grid-cols-1 gap-2">
+            <label className="text-xs text-gray-600">Category</label>
             <input
               className="input"
               type="text"
-              placeholder="Title (e.g., Paycheck, Food)"
               value={form.category}
-              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-              required
+              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+              placeholder={isOutflows ? "e.g., Rent, Groceries" : "e.g., Paycheque"}
             />
+          </div>
 
-            {/* Parent selector: 'None' or any existing top-level parent */}
-            <div className="grid gap-1">
-              <label className="text-xs text-gray-600">Parent</label>
-              <select
-                className="select"
-                value={form.parent}
-                onChange={e => setForm(f => ({ ...f, parent: e.target.value }))}
-              >
-                <option value="">None (top-level)</option>
-                {parents.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              {hasParent && (
-                <p className="text-xs text-gray-600">
-                  Subcategories don’t have budgets. The parent’s <em>Actual</em> is the sum of all its subcategories’ actuals.
-                </p>
-              )}
-            </div>
+          {/* Parent selector */}
+          {ParentSelect}
 
-            {/* Type (Outflows only, top-level only) */}
-            {((item?.section || '').toString().toLowerCase() === 'outflows') && !hasParent && (
-              <div className="grid gap-1">
-                <label className="text-xs text-gray-600">Type</label>
-                <select
-                  className="select"
-                  value={form.type}
-                  onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-                >
-                  <option value="variable">Variable (default)</option>
-                  <option value="fixed">Fixed</option>
-                </select>
-                <p className="text-xs text-gray-600">You can change this later. Variable is default.</p>
-              </div>
-            )}
+          {/* Type selector (top-level Outflows only) */}
+          {TypeSelector}
 
-            {/* Amount only for top-level */}
-            {!hasParent && (
-              <input
-                className="input"
-                type="number"
-                inputMode="decimal"
-                placeholder="Amount"
-                value={form.amount}
-                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-                required
-              />
-            )}
+          {/* Amount (disabled when parent is set) */}
+          {AmountField}
 
-            <div className="flex justify-end gap-2 flex-wrap">
-              {!isNew && (
-                <Button variant="danger" onClick={onDelete}>
+          {/* Rename scope (only makes sense when editing existing OR renaming on save) */}
+          {RenameScope}
+
+          {/* Actions */}
+          <div className="pt-1 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {!isNew ? (
+                <Button variant="ghost" onClick={handleDelete}>
                   Delete
                 </Button>
-              )}
-              <Button variant="ghost" onClick={onClose}>Cancel</Button>
-
-              {/* Claim is only meaningful for top-level rows */}
-              {!hasParent && (
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    onClaim?.({ category: form.category.trim(), amount: numberAmount, type: ((item?.section || '').toString().toLowerCase() === 'outflows' && !hasParent) ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined })
-                  }
-                >
+              ) : null}
+              {!parentIsSelected ? (
+                <Button variant="ghost" onClick={handleClaim} title="Create a transaction from this line">
                   Claim
                 </Button>
-              )}
-
-              <Button disabled={!canSave} onClick={handlePrimarySave}>
-                Save
-              </Button>
+              ) : null}
             </div>
-          </div>
-        </>
-      ) : (
-        // Rename scope prompt
-        <>
-          <h3 className="font-semibold mb-3">Rename matching transactions?</h3>
-          <p className="text-sm mb-3 opacity-80">
-            You’re renaming{sectionLabel ? ` in ${sectionLabel}` : ''}{' '}
-            <strong>{originalCategory}</strong> → <strong>{form.category.trim()}</strong>.
-            Choose how existing transactions should be updated.
-          </p>
-
-          <div className="grid gap-2 mb-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="rename-scope"
-                value="all"
-                checked={renameScope === 'all'}
-                onChange={() => setRenameScope('all')}
-              />
-              <span>
-                <strong>(A)</strong> Rename all matching transactions (all time)
-              </span>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="rename-scope"
-                value="period"
-                checked={renameScope === 'period'}
-                onChange={() => setRenameScope('period')}
-              />
-              <span>
-                <strong>(B)</strong> Rename matching transactions in the current period only
-              </span>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="rename-scope"
-                value="none"
-                checked={renameScope === 'none'}
-                onChange={() => setRenameScope('none')}
-              />
-              <span>
-                <strong>(C)</strong> Don’t rename previous transactions
-              </span>
-            </label>
-          </div>
-
-          <div className="flex justify-between gap-2">
-            <Button variant="ghost" onClick={() => setStage('edit')}>Back</Button>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Button variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button onClick={applyRename}>Apply</Button>
+              <Button onClick={handleSave}>{isNew ? 'Add' : 'Save'}</Button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </Modal>
   )
