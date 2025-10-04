@@ -405,7 +405,8 @@ export default function BudgetTab({
               "border-t border-gray-100 relative",
               depth === 0 && isCollapsed(section, path) ? "" : "hover:bg-gray-50",
             ].join(" ")}
-            onClick={() => setEditing({ section, path, isNew: false })}
+            onClick={editing ? undefined : () => setEditing({ section, path, isNew: false })}
+
             data-depth={depth}
           >
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
@@ -442,7 +443,8 @@ export default function BudgetTab({
     };
 
     return (
-      <div className="overflow-auto">
+      <div className="overflow-auto" style={editing ? { pointerEvents: "none" } : undefined}>
+
         <table className="w-full border-t border-gray-200 text-sm">
           <thead className="bg-gray-50/50 sticky top-0 z-10">
             <tr className="text-left text-gray-600">
@@ -537,14 +539,14 @@ export default function BudgetTab({
         <Card className="p-0 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <h3 className="font-medium">Inflows</h3>
-            <Button type="button" variant="ghost" onClick={() => openAdd("inflows")} className="!px-2 !py-1 text-sm">+ Add</Button>
+            <Button type="button" variant="ghost" onClick={() => { if (!editing) openAdd("inflows"); }} className="!px-2 !py-1 text-sm">+ Add</Button>
           </div>
           <SectionTable section="inflows" rows={getArray("inflows")} />
           <div className="h-px bg-gray-200 my-1" />
 
           <div className="flex items-center justify-between px-4 py-3">
             <h3 className="font-medium">Outflows</h3>
-            <Button type="button" variant="ghost" onClick={() => openAdd("outflows")} className="!px-2 !py-1 text-sm">+ Add</Button>
+            <Button type="button" variant="ghost" onClick={() => { if (!editing) openAdd("outflows"); }} className="!px-2 !py-1 text-sm">+ Add</Button>
           </div>
           <SectionTable section="outflows" rows={getArray("outflows")} />
 

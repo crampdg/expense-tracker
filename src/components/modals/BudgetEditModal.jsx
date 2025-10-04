@@ -40,17 +40,20 @@ export default function BudgetEditModal({
   const normalize = (s) =>
     (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
 
+  // Re-init form only when the modal opens or the selected row truly changes
+  const itemKey = item ? `${item.section || ''}::${item.category || ''}::${item.amount ?? ''}` : '';
   useEffect(() => {
-    if (item && open) {
-      setForm({
-        category: item.category || '',
-        amount: item.amount ?? '',
-        parent: currentParent || '' // '' => no parent (top-level)
-      })
-      setStage('edit')
-      setRenameScope('all')
-    }
-  }, [item, open, currentParent])
+    if (!open || !item) return;
+    setForm({
+      category: item.category || '',
+      amount: item.amount ?? '',
+      parent: currentParent || '' // '' => top-level
+    });
+    setStage('edit');
+    setRenameScope('all');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, currentParent, itemKey]);
+
 
   const originalCategory = item?.category ?? ''
   const hasParent = (form.parent ?? '').trim().length > 0
