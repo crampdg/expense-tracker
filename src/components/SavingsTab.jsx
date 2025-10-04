@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import usePersistentState from "../../hooks/usePersistentState";
-import { formatCurrency } from "../../utils/format";
-import { uid } from "../../utils/uid";
+import usePersistentState from "../hooks/usePersistentState";
+import { formatCurrency } from "../utils/format";
+import { uid } from "../utils/uid";
 
 // Lightweight modal used only inside this tab
 function Modal({ open, title, onClose, children }) {
