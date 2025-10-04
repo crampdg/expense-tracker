@@ -268,7 +268,7 @@ export default function DetailedTab({
           </div>
         </div>
 
-        <div className="overflow-auto" ref={exportContainerRef} id="detailed-export">
+        <div className="overflow-auto" ref={exportContainerRef} id="detailed-export" data-noswipe>
           <table className="w-full border-collapse text-xs md:text-sm">
             <thead className="table-head sticky top-0 z-10">
               <tr>

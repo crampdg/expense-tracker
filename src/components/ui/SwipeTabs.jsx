@@ -29,11 +29,16 @@ export default function SwipeTabs({
     let startX = 0, startY = 0, width = 0;
     let armed = false, moved = false;
 
+    const shouldIgnore = (target) => target?.closest?.("[data-noswipe]");
+
+
     const currentIndex = () => Math.max(0, tabs.indexOf(active));
 
     const onTouchStart = (e) => {
       if (e.touches?.length !== 1) return;
+      if (shouldIgnore(e.target)) return;
       const t = e.touches[0];
+
       width = el.clientWidth;
       startX = t.clientX;
       startY = t.clientY;

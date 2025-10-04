@@ -263,7 +263,7 @@ export default function BudgetTab({
   const sliceOrAll = (arr, showAll) => (showAll ? arr : arr.slice(0, 4));
 
   const InflowsTable = ({ rows }) => (
-    <div className="overflow-auto">
+    <div className="overflow-auto" data-noswipe>
       <table className="w-full border-t border-gray-200 text-sm">
         <thead className="bg-gray-50/50 sticky top-0 z-10">
           <tr className="text-left text-gray-600">
@@ -305,7 +305,7 @@ export default function BudgetTab({
   );
 
   const OutflowsTable = ({ rows }) => (
-    <div className="overflow-auto">
+    <div className="overflow-auto" data-noswipe>
       <table className="w-full border-t border-gray-200 text-sm">
         <thead className="bg-gray-50/50 sticky top-0 z-10">
           <tr className="text-left text-gray-600">

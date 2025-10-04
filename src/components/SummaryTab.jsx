@@ -242,16 +242,19 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
           <h3 className="font-semibold">Cashflow Timeline</h3>
           <div className="text-xs text-gray-500">Cumulative net by day</div>
         </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={cashflowSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" hide />
-            <YAxis tickFormatter={(v) => money(v)} width={70} />
-            <Tooltip formatter={(v) => money(v)} labelFormatter={(l) => `Date: ${l}`} />
-            <ReferenceLine y={0} stroke="#94a3b8" />
-            <Area type="monotone" dataKey="cum" fillOpacity={0.2} strokeOpacity={1} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div data-noswipe>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={cashflowSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" hide />
+              <YAxis tickFormatter={(v) => money(v)} width={70} />
+              <Tooltip formatter={(v) => money(v)} labelFormatter={(l) => `Date: ${l}`} />
+              <ReferenceLine y={0} stroke="#94a3b8" />
+              <Area type="monotone" dataKey="cum" fillOpacity={0.2} strokeOpacity={1} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
       </Card>
 
       {/* Top Spending Categories */}
@@ -265,14 +268,17 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
               </div>
             )}
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={outflowByCategory}>
-              <XAxis dataKey="category" />
-              <YAxis tickFormatter={(v) => money(v)} width={70} />
-              <Tooltip formatter={(v) => money(v)} />
-              <Bar dataKey="amount" />
-            </BarChart>
-          </ResponsiveContainer>
+          <div data-noswipe>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={outflowByCategory}>
+                <XAxis dataKey="category" />
+                <YAxis tickFormatter={(v) => money(v)} width={70} />
+                <Tooltip formatter={(v) => money(v)} />
+                <Bar dataKey="amount" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
         </Card>
       )}
 
