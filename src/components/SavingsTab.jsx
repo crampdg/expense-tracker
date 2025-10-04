@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import usePersistentState from "../hooks/usePersistentState";
-import formatCurrency from "../utils/format";
+import { money } from "../utils/format";
 import uid from "../utils/uid";
 
 // Lightweight modal used only inside this tab
@@ -129,13 +129,13 @@ export default function SavingsTab() {
       >
         <div style={{ background: "#ffffff", borderRadius: 16, padding: 14, boxShadow: "0 4px 16px rgba(0,0,0,.06)" }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Total Saved</div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{formatCurrency ? formatCurrency(totals.saved) : `$${totals.saved.toFixed(2)}`}</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{money ? money(totals.saved) : `$${totals.saved.toFixed(2)}`}</div>
         </div>
         <div style={{ background: "#ffffff", borderRadius: 16, padding: 14, boxShadow: "0 4px 16px rgba(0,0,0,.06)" }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Total Targets</div>
           <div style={{ fontSize: 22, fontWeight: 800 }}>
-            {formatCurrency
-              ? formatCurrency(totals.targeted || 0)
+            {money
+              ? money(totals.targeted || 0)
               : `$${Number(totals.targeted || 0).toFixed(2)}`}
           </div>
         </div>
@@ -172,12 +172,12 @@ export default function SavingsTab() {
                   <div style={{ fontSize: 13, opacity: 0.8 }}>
                     {hasTarget ? (
                       <>
-                        {formatCurrency ? formatCurrency(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}{" "}
+                        {money ? money(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}{" "}
                         /{" "}
-                        {formatCurrency ? formatCurrency(g.target) : `$${Number(g.target).toFixed(2)}`}
+                        {money ? money(g.target) : `$${Number(g.target).toFixed(2)}`}
                       </>
                     ) : (
-                      <>{formatCurrency ? formatCurrency(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}</>
+                      <>{money ? money(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}</>
                     )}
                   </div>
                 </div>
