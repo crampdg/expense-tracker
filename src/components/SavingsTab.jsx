@@ -3,6 +3,11 @@ import usePersistentState from "../hooks/usePersistentState";
 import { money } from "../utils/format";
 import uid from "../utils/uid";
 
+const safeUid =
+  typeof uid === "function"
+    ? uid
+    : () => `id_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
 // Lightweight modal used only inside this tab
 function Modal({ open, title, onClose, children }) {
   if (!open) return null;
@@ -53,7 +58,7 @@ function clamp(n) {
 export default function SavingsTab() {
   // Persistent store for goals + simple history (local to this tab)
   const [goals, setGoals] = usePersistentState("savings.goals.v1", () =>
-    DEFAULT_GOALS.map((g) => ({
+    DEFAULT_(goals || []).map((g) => ({
       id: uid(),
       name: g.name,
       target: g.target, // null or 0 => “no target”
@@ -65,10 +70,10 @@ export default function SavingsTab() {
   const [expandedId, setExpandedId] = useState(null);
 
   const [modal, setModal] = useState({ type: null, goalId: null }); // type: 'invest'|'withdraw'|'rename'|'add'|'remove'
-  const activeGoal = goals.find((g) => g.id === modal.goalId) || null;
+  const activeGoal = (goals || []).find((g) => g.id === modal.goalId) || null;
 
   const totals = useMemo(() => {
-    const saved = goals.reduce((s, g) => s + (g.balance || 0), 0);
+    const saved = (goals || []).reduce((s, g) => s + (g.balance || 0), 0);
     const targeted = goals
       .filter((g) => g.target && g.target > 0)
       .reduce((s, g) => s + g.target, 0);
@@ -143,7 +148,7 @@ export default function SavingsTab() {
 
       {/* Goals list */}
       <div style={{ display: "grid", gap: 12 }}>
-        {goals.map((g) => {
+        {(goals || []).map((g) => {
           const hasTarget = !!(g.target && g.target > 0);
           const pct = hasTarget ? Math.min(100, Math.round(((g.balance || 0) / g.target) * 100)) : 100;
 
@@ -297,7 +302,7 @@ export default function SavingsTab() {
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {DEFAULT_GOALS.map((t) => (
+            {DEFAULT_(goals || []).map((t) => (
               <button
                 key={t.templateId}
                 onClick={() => {
