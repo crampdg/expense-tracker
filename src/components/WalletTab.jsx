@@ -16,7 +16,6 @@ function readSettings() {
   return { investAPR, suggestedDailyBufferPct };
 }
 
-
 // ===== Investments storage keys =====
 const INVEST_KEYS = {
   APR: "investAPR",                  // annual rate as decimal (0.04 = 4%)
@@ -142,8 +141,6 @@ function rebuildInvestFromTransactions(apr, transactions, today = new Date()) {
   };
 }
 
-
-
 function saveSettings(s) {
   try {
     if (s.investAPR !== undefined) {
@@ -157,7 +154,6 @@ function saveSettings(s) {
   } catch {}
 }
 
-
 function pickStr(k, d="") {
   try {
     const v = localStorage.getItem(k);
@@ -166,7 +162,6 @@ function pickStr(k, d="") {
     return d;
   }
 }
-
 
 /* ---------- small helpers ---------- */
 function currency(n) {
@@ -215,6 +210,11 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     try { localStorage.setItem("investIsOpen", String(isInvestOpen)); } catch {}
   }, [isInvestOpen]);
 
+  // ---- Inputs (MOVED ABOVE EFFECTS THAT DEPEND ON txs) ----
+  const txs = Array.isArray(transactions) ? transactions : [];
+  const inflowCats = (budget?.inflows || []).map((i) => i.category);
+  const outflowCats = (budget?.outflows || []).map((o) => o.category);
+  const categories = Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean);
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -243,13 +243,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txs]); // key: reacts to deletes/edits/adds in Detailed
-
-
-  // ---- Inputs ----
-  const txs = Array.isArray(transactions) ? transactions : [];
-  const inflowCats = (budget?.inflows || []).map((i) => i.category);
-  const outflowCats = (budget?.outflows || []).map((o) => o.category);
-  const categories = Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean);
 
   // ---- Period window ----
   const { startISO, endISO, daysLeft } = useMemo(() => {
@@ -314,9 +307,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       tx.type = Number.isFinite(amtNum) && amtNum < 0 ? "expense" : "inflow";
     }
 
-    
-
-
     // Ensure TX has an id so paired record can reference it even if the store doesn't return one
     if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -350,8 +340,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     return committedId;
   };
 
-
-
   // ---- Planned & actuals this period ----
   const plannedInflows = useMemo(() => (budget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0), [budget]);
   const plannedOutflows = useMemo(() => (budget?.outflows || []).reduce((s, o) => s + (Number(o.amount) || 0), 0), [budget]);
@@ -379,7 +367,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const savingsReserved = settings.reserveOnMonthStart ? periodReserveTotal : (settings.reserveDaily || 0) * accruedDays;
 
   // ---- Suggested Daily ----
-  // ---- Suggested Daily ----
   const hasAnyBudget = ((budget?.inflows?.length || 0) + (budget?.outflows?.length || 0)) > 0;
   const suggestedDaily = useMemo(() => {
     const simple = cashOnHand / daysLeft;
@@ -396,69 +383,68 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const openSettings = () => setShowSettings(true);
   const saveSettingsAndRefresh = (vals) => { saveSettings(vals); setSettings(vals); };
 
-function promptNumber(title, defaultValue = "") {
-  const raw = window.prompt(title, defaultValue);
-  if (raw === null) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
+  function promptNumber(title, defaultValue = "") {
+    const raw = window.prompt(title, defaultValue);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
 
-function investNow() {
-  // Accrue interest first so we add on top of up-to-date balance
-  const state = accrueInvestMonthly(readInvestState(), new Date());
-  const amt = promptNumber("Amount to INVEST:");
-  if (amt === null) return;
+  function investNow() {
+    // Accrue interest first so we add on top of up-to-date balance
+    const state = accrueInvestMonthly(readInvestState(), new Date());
+    const amt = promptNumber("Amount to INVEST:");
+    if (amt === null) return;
 
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const after = {
-    ...state,
-    balance: state.balance + amt,
-    principal: state.principal + amt,
-    lastAccruedISO: todayISO,
-  };
-  writeInvestState(after);
-  setInvest(after);
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const after = {
+      ...state,
+      balance: state.balance + amt,
+      principal: state.principal + amt,
+      lastAccruedISO: todayISO,
+    };
+    writeInvestState(after);
+    setInvest(after);
 
-  // Record an expense transaction to Investments
-  onAddTransaction?.({
-    date: todayISO,
-    type: "expense",
-    category: "Investments",
-    amount: amt,
-    note: "Invested",
-    meta: { investment: true, action: "invest" },
-  });
-}
+    // Record an expense transaction to Investments
+    onAddTransaction?.({
+      date: todayISO,
+      type: "expense",
+      category: "Investments",
+      amount: amt,
+      note: "Invested",
+      meta: { investment: true, action: "invest" },
+    });
+  }
 
-function withdrawNow() {
-  const state = accrueInvestMonthly(readInvestState(), new Date());
-  const amt = promptNumber(`Amount to WITHDRAW (available: ${currency(state.balance)})`);
-  if (amt === null) return;
+  function withdrawNow() {
+    const state = accrueInvestMonthly(readInvestState(), new Date());
+    const amt = promptNumber(`Amount to WITHDRAW (available: ${currency(state.balance)})`);
+    if (amt === null) return;
 
-  const take = Math.min(amt, state.balance);
-  if (take <= 0) return;
+    const take = Math.min(amt, state.balance);
+    if (take <= 0) return;
 
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const newBal = state.balance - take;
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const newBal = state.balance - take;
 
-  // Reduce principal first; remainder comes from earnings
-  const newPrincipal = Math.max(0, state.principal - take);
+    // Reduce principal first; remainder comes from earnings
+    const newPrincipal = Math.max(0, state.principal - take);
 
-  const after = { ...state, balance: newBal, principal: newPrincipal, lastAccruedISO: todayISO };
-  writeInvestState(after);
-  setInvest(after);
+    const after = { ...state, balance: newBal, principal: newPrincipal, lastAccruedISO: todayISO };
+    writeInvestState(after);
+    setInvest(after);
 
-  // Record an inflow transaction from Investments
-  onAddTransaction?.({
-    date: todayISO,
-    type: "inflow",
-    category: "Investments",
-    amount: take,
-    note: "Withdrawal",
-    meta: { investment: true, action: "withdraw" },
-  });
-}
-
+    // Record an inflow transaction from Investments
+    onAddTransaction?.({
+      date: todayISO,
+      type: "inflow",
+      category: "Investments",
+      amount: take,
+      note: "Withdrawal",
+      meta: { investment: true, action: "withdraw" },
+    });
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -479,7 +465,6 @@ function withdrawNow() {
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
           {/* INVESTMENTS BUCKET (collapsible) */}
-          
           <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
             {/* Header row: label + chevron (APR shows only when open) */}
             <button
@@ -545,7 +530,6 @@ function withdrawNow() {
             </div>
           </div>
 
-
           {/* Cash on Hand */}
           <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
           <div className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${cashOnHand < 0 ? "text-red-700" : "text-emerald-900"}`} aria-live="polite">
@@ -554,7 +538,7 @@ function withdrawNow() {
 
           {/* Suggested Daily */}
           <div className="mt-3 flex items-baseline gap-2">
-            <div className="text-sm text-emerald-950/80" title={hasAnyBudget ? "After planned bills, savings pot & buffer" : "Cash ÷ days left"}>
+            <div className="text-sm text-emerald-950/80" title={((budget?.inflows?.length || 0)+(budget?.outflows?.length || 0))>0 ? "After planned bills, savings pot & buffer" : "Cash ÷ days left"}>
               Suggested Daily
             </div>
             <div className={`text-2xl font-bold ${amtClass(suggestedDaily)}`}>{currency(suggestedDaily)}</div>
@@ -617,7 +601,6 @@ function withdrawNow() {
           onSave={onAddTransaction}
           categories={categories}
         />
-
       )}
       {showSettings && (
         <SavingsSettingsModal
