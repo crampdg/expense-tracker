@@ -7,8 +7,10 @@ import { useState, useEffect, useMemo } from 'react'
  * - open, onClose
  * - item: { category, amount, section }  // section used only for label context
  * - isNew: boolean
- * - isSub: boolean   // NEW: true when editing a subcategory (no amount, no claim)
+ * - parents: string[]           // list of existing top-level parents in this section (excluding self)
+ * - currentParent: string|null  // the row's current parent name, or null if top-level
  * - onSave(form, scope) -> scope: "all" | "period" | "none"
+ *      form = { category: string, amount: number, parent: string|null }
  * - onDelete()
  * - onClaim(form)
  */
@@ -17,16 +19,17 @@ export default function BudgetEditModal({
   onClose,
   item,
   isNew = false,
-  isSub = false,
+  parents = [],
+  currentParent = null,
   onSave,
   onDelete,
   onClaim
 }) {
-  const [form, setForm] = useState({ category: '', amount: '' })
+  const [form, setForm] = useState({ category: '', amount: '', parent: '' })
   const [stage, setStage] = useState('edit') // 'edit' | 'rename'
   const [renameScope, setRenameScope] = useState('all') // default A
 
-  // Normalize section label
+  // Normalize section label (for rename copy)
   const sectionLabel = (() => {
     const s = (item?.section || '').toString().toLowerCase()
     if (s === 'inflows') return 'Inflows'
@@ -34,26 +37,23 @@ export default function BudgetEditModal({
     return null
   })()
 
-  // Normalize string
   const normalize = (s) =>
-    (s ?? '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ' ')
+    (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
 
   useEffect(() => {
     if (item && open) {
       setForm({
         category: item.category || '',
-        // Subcategories do not have budgets; force amount to 0 (ignored on save)
-        amount: isSub ? 0 : (item.amount ?? '')
+        amount: item.amount ?? '',
+        parent: currentParent || '' // '' => no parent (top-level)
       })
       setStage('edit')
       setRenameScope('all')
     }
-  }, [item, open, isSub])
+  }, [item, open, currentParent])
 
   const originalCategory = item?.category ?? ''
+  const hasParent = (form.parent ?? '').trim().length > 0
 
   const categoryChanged = useMemo(() => {
     if (isNew) return false
@@ -61,34 +61,39 @@ export default function BudgetEditModal({
   }, [form.category, originalCategory, isNew])
 
   const numberAmount = useMemo(() => {
-    if (isSub) return 0 // ignored anyway
+    if (hasParent) return 0 // subs ignore amount
     const n = typeof form.amount === 'string' ? form.amount.trim() : form.amount
     const num = Number(n)
     return Number.isFinite(num) ? num : NaN
-  }, [form.amount, isSub])
+  }, [form.amount, hasParent])
 
   const canSave =
     (form.category ?? '').trim().length > 0 &&
-    (isSub || Number.isFinite(numberAmount))
+    (!hasParent ? Number.isFinite(numberAmount) : true)
 
   function handlePrimarySave() {
     if (!canSave) return
     if (!isNew && categoryChanged) {
-      // Step into rename scope prompt
-      setStage('rename')
+      setStage('rename') // ask scope
     } else {
-      // No rename needed
       onSave?.(
-        { category: form.category.trim(), amount: isSub ? 0 : numberAmount },
+        {
+          category: form.category.trim(),
+          amount: hasParent ? 0 : numberAmount,
+          parent: hasParent ? form.parent.trim() : null
+        },
         'none'
       )
     }
   }
 
   function applyRename() {
-    // Return chosen scope along with the edited values
     onSave?.(
-      { category: form.category.trim(), amount: isSub ? 0 : numberAmount },
+      {
+        category: form.category.trim(),
+        amount: hasParent ? 0 : numberAmount,
+        parent: hasParent ? form.parent.trim() : null
+      },
       renameScope
     )
   }
@@ -111,8 +116,28 @@ export default function BudgetEditModal({
               required
             />
 
-            {/* Top-level rows only: show Amount */}
-            {!isSub && (
+            {/* Parent selector: 'None' or any existing top-level parent */}
+            <div className="grid gap-1">
+              <label className="text-xs text-gray-600">Parent</label>
+              <select
+                className="select"
+                value={form.parent}
+                onChange={e => setForm(f => ({ ...f, parent: e.target.value }))}
+              >
+                <option value="">None (top-level)</option>
+                {parents.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              {hasParent && (
+                <p className="text-xs text-gray-600">
+                  Subcategories don’t have budgets. The parent’s <em>Actual</em> is the sum of all its subcategories’ actuals.
+                </p>
+              )}
+            </div>
+
+            {/* Amount only for top-level */}
+            {!hasParent && (
               <input
                 className="input"
                 type="number"
@@ -124,13 +149,6 @@ export default function BudgetEditModal({
               />
             )}
 
-            {isSub && (
-              <p className="text-xs text-gray-600">
-                Subcategories don’t have budgets. The parent’s <em>Actual</em> is the
-                sum of all its subcategories’ actuals.
-              </p>
-            )}
-
             <div className="flex justify-end gap-2 flex-wrap">
               {!isNew && (
                 <Button variant="danger" onClick={onDelete}>
@@ -140,7 +158,7 @@ export default function BudgetEditModal({
               <Button variant="ghost" onClick={onClose}>Cancel</Button>
 
               {/* Claim is only meaningful for top-level rows */}
-              {!isSub && (
+              {!hasParent && (
                 <Button
                   variant="ghost"
                   onClick={() =>
