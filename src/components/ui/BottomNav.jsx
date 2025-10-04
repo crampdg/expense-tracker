@@ -78,7 +78,8 @@ export default function BottomNav({ active, setActive, walletIconSrc }) {
 
   return (
     <nav
-      className={`fixed bottom-0 left-0 right-0 z-50 ${barBg} h-[74px] pb-[env(safe-area-inset-bottom)]`}
+      className={`fixed bottom-0 left-0 right-0 z-50 ${barBg} h-[74px] pb-[env(safe-area-inset-bottom)] tap-safe`}
+
       role="tablist"
       aria-label="Primary"
       onKeyDown={handleKey}
