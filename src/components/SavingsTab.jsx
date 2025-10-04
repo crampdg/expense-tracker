@@ -57,41 +57,45 @@ function clamp(n) {
 
 export default function SavingsTab() {
   // Persistent store for goals + simple history (local to this tab)
-  const [goals, setGoals] = usePersistentState("savings.goals.v1", () =>
+  const [goals, setGoals] = usePersistentState(
+    "savings.goals.v1",
     DEFAULT_GOALS.map((g) => ({
-        id: safeUid(),
-        name: g.name,
-        target: g.target, // null or 0 => “no target”
-        balance: 0,
-        createdAt: Date.now(),
-    })),
-    );
+      id: safeUid(),
+      name: g.name,
+      target: g.target, // null or 0 => “no target”
+      balance: 0,
+      createdAt: Date.now(),
+    }))
+  );
 
   const [history, setHistory] = usePersistentState("savings.history.v1", []);
   const [expandedId, setExpandedId] = useState(null);
 
   const [modal, setModal] = useState({ type: null, goalId: null }); // type: 'invest'|'withdraw'|'rename'|'add'|'remove'
-  const activeGoal = (goals || []).find((g) => g.id === modal.goalId) || null;
+  const activeGoal = (Array.isArray(goals) ? goals : []).find((g) => g.id === modal.goalId) || null;
+
+  // Guard against bad persisted shapes to avoid white screens
+  const goalsList = Array.isArray(goals) ? goals : [];
 
   const totals = useMemo(() => {
-    const saved = (goals || []).reduce((s, g) => s + (g.balance || 0), 0);
-    const targeted = goals
+    const saved = goalsList.reduce((s, g) => s + (g.balance || 0), 0);
+    const targeted = goalsList
       .filter((g) => g.target && g.target > 0)
       .reduce((s, g) => s + g.target, 0);
     return { saved, targeted };
-  }, [goals]);
+  }, [goalsList]);
 
   function upsertGoal(next) {
-    setGoals((prev) => prev.map((g) => (g.id === next.id ? next : g)));
+    setGoals((prev) => (Array.isArray(prev) ? prev.map((g) => (g.id === next.id ? next : g)) : [next]));
   }
   function addGoal(newGoal) {
-    setGoals((prev) => [{ id: safeUid(), balance: 0, createdAt: Date.now(), ...newGoal }, ...prev]);
+    setGoals((prev) => [{ id: safeUid(), balance: 0, createdAt: Date.now(), ...newGoal }, ...(Array.isArray(prev) ? prev : [])]);
   }
   function removeGoal(id) {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
+    setGoals((prev) => (Array.isArray(prev) ? prev.filter((g) => g.id !== id) : []));
   }
   function addHistory(entry) {
-    setHistory((prev) => [{ id: safeUid(), t: Date.now(), ...entry }, ...prev].slice(0, 500));
+    setHistory((prev) => [{ id: safeUid(), t: Date.now(), ...entry }, ...(Array.isArray(prev) ? prev : [])].slice(0, 500));
   }
 
   function applyTx(kind, goal, rawAmount) {
@@ -135,12 +139,14 @@ export default function SavingsTab() {
       >
         <div style={{ background: "#ffffff", borderRadius: 16, padding: 14, boxShadow: "0 4px 16px rgba(0,0,0,.06)" }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Total Saved</div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>{money ? money(totals.saved) : `$${totals.saved.toFixed(2)}`}</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>
+            {typeof money === "function" ? money(totals.saved) : `$${totals.saved.toFixed(2)}`}
+          </div>
         </div>
         <div style={{ background: "#ffffff", borderRadius: 16, padding: 14, boxShadow: "0 4px 16px rgba(0,0,0,.06)" }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Total Targets</div>
           <div style={{ fontSize: 22, fontWeight: 800 }}>
-            {money
+            {typeof money === "function"
               ? money(totals.targeted || 0)
               : `$${Number(totals.targeted || 0).toFixed(2)}`}
           </div>
@@ -149,7 +155,7 @@ export default function SavingsTab() {
 
       {/* Goals list */}
       <div style={{ display: "grid", gap: 12 }}>
-        {(goals || []).map((g) => {
+        {goalsList.map((g) => {
           const hasTarget = !!(g.target && g.target > 0);
           const pct = hasTarget ? Math.min(100, Math.round(((g.balance || 0) / g.target) * 100)) : 100;
 
@@ -178,12 +184,12 @@ export default function SavingsTab() {
                   <div style={{ fontSize: 13, opacity: 0.8 }}>
                     {hasTarget ? (
                       <>
-                        {money ? money(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}{" "}
+                        {typeof money === "function" ? money(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}{" "}
                         /{" "}
-                        {money ? money(g.target) : `$${Number(g.target).toFixed(2)}`}
+                        {typeof money === "function" ? money(g.target) : `$${Number(g.target).toFixed(2)}`}
                       </>
                     ) : (
-                      <>{money ? money(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}</>
+                      <>{typeof money === "function" ? money(g.balance || 0) : `$${(g.balance || 0).toFixed(2)}`}</>
                     )}
                   </div>
                 </div>
