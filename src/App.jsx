@@ -5,6 +5,8 @@ import WalletTab from './components/WalletTab.jsx'
 import BudgetTab from './components/BudgetTab.jsx'
 import DetailedTab from './components/DetailedTab.jsx'
 import SummaryTab from './components/SummaryTab.jsx'
+import SavingsTab from './components/SavingsTab.jsx'
+
 import SpendModal from './components/modals/SpendModal.jsx'
 import MoneyTimeModal from './components/modals/MoneyTimeModal.jsx'
 import BudgetEditModal from './components/modals/BudgetEditModal.jsx'
@@ -252,7 +254,7 @@ function App() {
     <div className="flex flex-col h-screen">
       <SwipeTabs
         className="flex-1 overflow-y-auto p-4 pb-28"
-        tabs={["budget","summary","wallet","detailed"]}
+        tabs={["budget","summary","wallet","detailed", "savings"]}
         active={activeTab}
         onChange={setActiveTab}
         edge={0}        // swipe can start anywhere, not just the edges
@@ -301,6 +303,11 @@ function App() {
             periodOffset={periodOffset}
           />
         )}
+
+        {activeTab === 'savings' && (
+          <SavingsTab />
+        )}
+
 
 
         {activeTab === 'settings' && (

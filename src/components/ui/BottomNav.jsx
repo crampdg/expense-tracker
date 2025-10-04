@@ -21,15 +21,17 @@ export default function BottomNav({ active, setActive, walletIconSrc }) {
       { key: "summary", label: "Summary", Icon: PieChart, disabled: false },
       // center wallet rendered separately as a FAB
       { key: "detailed", label: "Detailed", Icon: List, disabled: false },
-      { key: "coming", label: "Coming", Icon: Lock, disabled: true },
+      { key: "savings", label: "Savings", Icon: Lock, disabled: false },
+
     ],
     []
   );
 
   const keys = useMemo(
-    () => ["budget", "summary", "wallet", "detailed", "coming"],
+    () => ["budget", "summary", "wallet", "detailed", "savings"],
     []
   );
+
 
   const handleKey = useCallback(
     (e) => {
@@ -43,14 +45,7 @@ export default function BottomNav({ active, setActive, walletIconSrc }) {
           ? (current + 1) % keys.length
           : (current - 1 + keys.length) % keys.length;
 
-      // skip disabled destinations
-      let guard = 0;
-      while (keys[nextIndex] === "coming" && guard++ < keys.length) {
-        nextIndex =
-          e.key === "ArrowRight"
-            ? (nextIndex + 1) % keys.length
-            : (nextIndex - 1 + keys.length) % keys.length;
-      }
+      
       setActive(keys[nextIndex]);
     },
     [active, keys, setActive]
@@ -177,24 +172,35 @@ export default function BottomNav({ active, setActive, walletIconSrc }) {
             </button>
           </div>
 
-          {/* Coming (disabled) */}
+          {/* Savings */}
           <div className="flex justify-center">
             <button
               type="button"
               role="tab"
-              aria-selected={active === "coming"}
-              aria-label="Coming soon"
-              disabled
-              className={`${baseBtn} opacity-50 cursor-not-allowed`}
-              title="Coming soon"
+              aria-selected={active === "savings"}
+              aria-label="Savings"
+              onClick={() => setActive("savings")}
+              className={baseBtn}
             >
-              <Lock size={24} className="text-emerald-300/60" />
-              <span className="text-emerald-200/70 text-xs font-medium">
-                Coming
+              <Lock
+                size={24}
+                className={active === "savings" ? activeIcon : inactiveIcon}
+              />
+              <span
+                className={`text-xs font-medium ${
+                  active === "savings" ? activeText : inactiveText
+                }`}
+              >
+                Savings
               </span>
-              <span className="h-1 w-1 rounded-full mt-0.5 bg-transparent" />
+              <span
+                className={`h-1 w-1 rounded-full mt-0.5 ${
+                  active === "savings" ? "bg-white" : "bg-transparent"
+                }`}
+              />
             </button>
           </div>
+
         </div>
 
         {/* Raised Wallet FAB (center) */}

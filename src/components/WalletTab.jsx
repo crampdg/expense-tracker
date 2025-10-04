@@ -464,7 +464,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         </button>
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          {/* INVESTMENTS BUCKET (collapsible) */}
+          {/* INVESTMENTS MOVED TO SAVINGS TAB */}
+          {false && (
           <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
             {/* Header row: label + chevron (APR shows only when open) */}
             <button
@@ -529,7 +530,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
               </div>
             </div>
           </div>
-
+          )}
+          
           {/* Cash on Hand */}
           <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
           <div className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${cashOnHand < 0 ? "text-red-700" : "text-emerald-900"}`} aria-live="polite">
