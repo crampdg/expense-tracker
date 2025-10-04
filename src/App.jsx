@@ -252,7 +252,7 @@ function App() {
     <div className="flex flex-col h-screen">
       <SwipeTabs
         className="flex-1 overflow-y-auto p-4 pb-28"
-        tabs={["wallet","budget","summary","detailed"]}
+        tabs={["budget","summary","wallet","detailed"]}
         active={activeTab}
         onChange={setActiveTab}
         edge={0}        // swipe can start anywhere, not just the edges
