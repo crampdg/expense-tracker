@@ -27,7 +27,11 @@ export default function BudgetTab({
   showUndoToast,
   onBulkRenameTransactions,
 }) {
+    const safePeriod =
+    period ?? { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) };
+
   // -------------------- Helpers --------------------
+
   const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const isBlank = (s) => !s || !s.trim();
 
@@ -105,11 +109,13 @@ export default function BudgetTab({
 
   // -------------------- Period math --------------------
   const offsetStart = useMemo(
-    () => getAnchoredPeriodStart(period.type, period.anchorDate, periodOffset),
+    () => getAnchoredPeriodStart(safePeriod.type, safePeriod.anchorDate, periodOffset)
+
     [period.type, period.anchorDate, periodOffset]
   );
   const offsetEnd = useMemo(
-    () => calcPeriodEnd(period.type, offsetStart),
+    () => calcPeriodEnd(safePeriod.type, offsetStart)
+
     [period.type, offsetStart]
   );
   const startISO = offsetStart.toISOString().slice(0, 10);
@@ -512,7 +518,7 @@ export default function BudgetTab({
                 <button className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" onClick={() => { undo(); setMenuOpen(false); }} disabled={!history.length}>
                   Undo
                 </button>
-                <div className="px-2 py-1.5 border-top border-gray-100">
+                <div className="px-2 py-1.5 border-t border-gray-100">
                   <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
                 </div>
                 <div className="px-2 py-1 border-t border-gray-100">
@@ -534,7 +540,8 @@ export default function BudgetTab({
           <Button type="button" variant="ghost" className="!px-2" onClick={() => setPeriodOffset((o) => o - 1)} title="Previous">←</Button>
           <Button type="button" variant="ghost" className="!px-2" onClick={() => setPeriodOffset((o) => o + 1)} title="Next">→</Button>
           <button type="button" onClick={() => setPeriodOpen(true)} className="px-2 py-1 rounded border text-gray-700 text-xs md:text-sm hover:bg-gray-50" title="Open period settings">
-            {period.type} • {startISO} → {endISO}
+            {safePeriod.type} • {startISO} → {endISO}
+
           </button>
         </div>
       </Card>
@@ -617,7 +624,9 @@ export default function BudgetTab({
         isNew={!!editing?.isNew}
         parents={editing ? parentNames(editing.section, getItemAtPath(editing.section, editing.path)?.category || "") : []}
 
-        currentParent={editing && editing.path?.length === 2 ? getArray(editing.section)[editing.path[0]]?.category || null : null}
+
+        currentParent={(editing && editing.path?.length === 2) ? (getArray(editing.section)[editing.path[0]]?.category || null) : null}
+
         onSave={(form, scope) => saveRow(editing, form, scope)}
         onDelete={() => deleteRow(editing)}
         onClaim={(form) => claimRow(editing, form)}
