@@ -305,8 +305,12 @@ function App() {
         )}
 
         {activeTab === 'savings' && (
-          <SavingsTab />
+          <SavingsTab
+            transactions={transactions}
+            onAddTransaction={handleAddTransaction}
+          />
         )}
+
 
 
 
