@@ -5,8 +5,9 @@ import { useState, useEffect, useMemo } from 'react'
 /**
  * Props:
  * - open, onClose
- * - item: { category, amount, section }  // section is optional; purely for label context
+ * - item: { category, amount, section }  // section used only for label context
  * - isNew: boolean
+ * - isSub: boolean   // NEW: true when editing a subcategory (no amount, no claim)
  * - onSave(form, scope) -> scope: "all" | "period" | "none"
  * - onDelete()
  * - onClaim(form)
@@ -16,6 +17,7 @@ export default function BudgetEditModal({
   onClose,
   item,
   isNew = false,
+  isSub = false,
   onSave,
   onDelete,
   onClaim
@@ -24,29 +26,34 @@ export default function BudgetEditModal({
   const [stage, setStage] = useState('edit') // 'edit' | 'rename'
   const [renameScope, setRenameScope] = useState('all') // default A
 
-  useEffect(() => {
-    if (item && open) {
-      setForm({
-        category: item.category || '',
-        amount: item.amount ?? ''
-      })
-      setStage('edit')
-      setRenameScope('all')
-    }
-  }, [item, open])
+  // Normalize section label
+  const sectionLabel = (() => {
+    const s = (item?.section || '').toString().toLowerCase()
+    if (s === 'inflows') return 'Inflows'
+    if (s === 'outflows') return 'Outflows'
+    return null
+  })()
 
-  const originalCategory = item?.category ?? ''
-  const sectionLabel = (item?.section || '').toString().toLowerCase() === 'inflow'
-    ? 'Inflows'
-    : (item?.section || '').toString().toLowerCase() === 'outflow'
-      ? 'Outflows'
-      : null
-
+  // Normalize string
   const normalize = (s) =>
     (s ?? '')
       .trim()
       .toLowerCase()
       .replace(/\s+/g, ' ')
+
+  useEffect(() => {
+    if (item && open) {
+      setForm({
+        category: item.category || '',
+        // Subcategories do not have budgets; force amount to 0 (ignored on save)
+        amount: isSub ? 0 : (item.amount ?? '')
+      })
+      setStage('edit')
+      setRenameScope('all')
+    }
+  }, [item, open, isSub])
+
+  const originalCategory = item?.category ?? ''
 
   const categoryChanged = useMemo(() => {
     if (isNew) return false
@@ -54,14 +61,15 @@ export default function BudgetEditModal({
   }, [form.category, originalCategory, isNew])
 
   const numberAmount = useMemo(() => {
+    if (isSub) return 0 // ignored anyway
     const n = typeof form.amount === 'string' ? form.amount.trim() : form.amount
     const num = Number(n)
     return Number.isFinite(num) ? num : NaN
-  }, [form.amount])
+  }, [form.amount, isSub])
 
   const canSave =
     (form.category ?? '').trim().length > 0 &&
-    Number.isFinite(numberAmount)
+    (isSub || Number.isFinite(numberAmount))
 
   function handlePrimarySave() {
     if (!canSave) return
@@ -70,13 +78,19 @@ export default function BudgetEditModal({
       setStage('rename')
     } else {
       // No rename needed
-      onSave?.({ category: form.category.trim(), amount: numberAmount }, 'none')
+      onSave?.(
+        { category: form.category.trim(), amount: isSub ? 0 : numberAmount },
+        'none'
+      )
     }
   }
 
   function applyRename() {
     // Return chosen scope along with the edited values
-    onSave?.({ category: form.category.trim(), amount: numberAmount }, renameScope)
+    onSave?.(
+      { category: form.category.trim(), amount: isSub ? 0 : numberAmount },
+      renameScope
+    )
   }
 
   return (
@@ -97,33 +111,50 @@ export default function BudgetEditModal({
               required
             />
 
-            <input
-              className="input"
-              type="number"
-              inputMode="decimal"
-              placeholder="Amount"
-              value={form.amount}
-              onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-              required
-            />
+            {/* Top-level rows only: show Amount */}
+            {!isSub && (
+              <input
+                className="input"
+                type="number"
+                inputMode="decimal"
+                placeholder="Amount"
+                value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                required
+              />
+            )}
 
+            {isSub && (
+              <p className="text-xs text-gray-600">
+                Subcategories don’t have budgets. The parent’s <em>Actual</em> is the
+                sum of all its subcategories’ actuals.
+              </p>
+            )}
 
             <div className="flex justify-end gap-2 flex-wrap">
               {!isNew && (
                 <Button variant="danger" onClick={onDelete}>
-
                   Delete
                 </Button>
               )}
               <Button variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button variant="ghost" onClick={() => onClaim?.({ category: form.category.trim(), amount: numberAmount })}>
-                Claim
-              </Button>
+
+              {/* Claim is only meaningful for top-level rows */}
+              {!isSub && (
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    onClaim?.({ category: form.category.trim(), amount: numberAmount })
+                  }
+                >
+                  Claim
+                </Button>
+              )}
+
               <Button disabled={!canSave} onClick={handlePrimarySave}>
                 Save
               </Button>
             </div>
-
           </div>
         </>
       ) : (

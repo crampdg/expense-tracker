@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { calcPeriodEnd, getAnchoredPeriodStart } from "../utils/periodUtils";
 import Card from "./ui/Card.jsx";
 import Button from "./ui/Button.jsx";
-import BudgetEditModal from "./modals/BudgetEditModal.jsx";
+import BudgetEditModal from "../modals/BudgetEditModal.jsx";
 import { money } from "../utils/format.js";
 import ExportPDFButton from "./ui/ExportPDFButton.jsx";
 import SharePDFButton from "./ui/SharePDFButton.jsx";
@@ -832,28 +832,30 @@ export default function BudgetTab({
 
       {/* Modal for add/edit */}
       <BudgetEditModal
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        item={
-          editing
-            ? editing.isNew
-              ? {
-                  category: "",
-                  amount: editing.isSub ? 0 : "",
-                  section: editing.section,
-                }
-              : {
-                  ...getItemAtPath(editing.section, editing.path),
-                  amount: editing.isSub ? 0 : getItemAtPath(editing.section, editing.path)?.amount ?? 0,
-                  section: editing.section,
-                }
-            : null
-        }
-        isNew={!!editing?.isNew}
-        onSave={(form, scope) => saveRow(editing, form, scope)}
-        onDelete={() => deleteRow(editing)}
-        onClaim={(form) => claimRow(editing, form)}
-      />
+      open={!!editing}
+      onClose={() => setEditing(null)}
+      item={
+        editing
+          ? editing.isNew
+            ? {
+                category: "",
+                amount: editing.isSub ? 0 : "",
+                section: editing.section,
+              }
+            : {
+                ...getItemAtPath(editing.section, editing.path),
+                amount: editing.isSub ? 0 : getItemAtPath(editing.section, editing.path)?.amount ?? 0,
+                section: editing.section,
+              }
+          : null
+      }
+      isNew={!!editing?.isNew}
+      isSub={!!editing?.isSub}
+      onSave={(form, scope) => saveRow(editing, form, scope)}
+      onDelete={() => deleteRow(editing)}
+      onClaim={(form) => claimRow(editing, form)}
+    />
+
 
       {/* Period Settings Modal (compact) */}
       <Modal
