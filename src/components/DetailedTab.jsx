@@ -8,8 +8,8 @@ import TransactionEditModal from "./modals/TransactionEditModal.jsx"
 export default function DetailedTab({
   transactions,
   budget,
-  editTransaction,      // (updatedTx) => void
-  deleteTransaction,    // (id) => void
+  editTransaction,
+  deleteTransaction,
   period,
   periodOffset,
 }) {
@@ -49,10 +49,10 @@ export default function DetailedTab({
     return Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean).sort()
   }, [budget])
 
-  const [typeFilter, setTypeFilter] = useState("all") // all | inflow | expense
+  const [typeFilter, setTypeFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("")
-  const [dateFrom, setDateFrom] = useState("") // blank = no date filter
-  const [dateTo, setDateTo] = useState("")     // blank = no date filter
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
 
   const applyCurrentPeriod = () => {
     setDateFrom(startISO)
@@ -108,7 +108,8 @@ export default function DetailedTab({
 
   // ---------- Export ----------
   const [exportOpen, setExportOpen] = useState(false)
-  const exportContainerRef = useRef(null) // what we'll pass to pdf exporter
+  const exportContainerRef = useRef(null) // element we export
+  const EXPORT_ID = "detailed-export"
 
   const exportRows = useMemo(() => {
     return filtered.map((t) => {
@@ -156,7 +157,6 @@ export default function DetailedTab({
     setExportOpen(false)
   }
 
-  // Minimal Excel export using HTML table
   const exportExcel = () => {
     const headers = ["Date","Type","Category","Amount","Desc"]
     const tableRows = exportRows.map(r =>
@@ -174,36 +174,54 @@ export default function DetailedTab({
     setExportOpen(false)
   }
 
-  // Try to match the app's existing PDF exporter (same as Budget/Summary)
   const exportPDF = async () => {
     const filename = `transactions_${fileTimestamp()}.pdf`
     const el = exportContainerRef.current
+    // ensure the element has the expected id
+    if (el && !el.id) el.id = EXPORT_ID
 
-    // 1) Try the shared utils/pdfExport.js (common function names)
+    // Try your shared utils/pdfExport.js in multiple common signatures
     try {
       const mod = await import("../utils/pdfExport.js")
-      const maybeFns = [
-        "exportElementToPDF",  // (element, filename) => Promise<void>
+      const variants = [
+        // (idString, filename)
+        async (fn) => fn.length >= 2 && (await fn(EXPORT_ID, filename), true),
+        // (#idString, filename)
+        async (fn) => fn.length >= 2 && (await fn("#" + EXPORT_ID, filename), true),
+        // (element, filename)
+        async (fn) => fn.length >= 2 && el && (await fn(el, filename), true),
+        // (idString)
+        async (fn) => fn.length === 1 && (await fn(EXPORT_ID), true),
+        // (#idString)
+        async (fn) => fn.length === 1 && (await fn("#" + EXPORT_ID), true),
+        // (element)
+        async (fn) => fn.length === 1 && el && (await fn(el), true),
+      ]
+
+      const names = [
+        "exportElementToPDF",
         "exportElToPDF",
         "exportTableToPDF",
         "exportToPDF",
         "exportPDF",
-        "default",             // default export might be a function
+        "default",
       ].filter((k) => k in mod)
 
-      if (maybeFns.length) {
-        const fn = mod[maybeFns[0]]
-        if (typeof fn === "function") {
-          await fn(el, filename)
-          setExportOpen(false)
-          return
+      for (const name of names) {
+        const fn = mod[name]
+        if (typeof fn !== "function") continue
+        for (const tryCall of variants) {
+          try {
+            const ok = await tryCall(fn)
+            if (ok) { setExportOpen(false); return }
+          } catch (_) { /* try next variant */ }
         }
       }
     } catch (_) {
-      // ignore and fall back
+      // fall through to print dialog
     }
 
-    // 2) Fallback: print dialog (ensures feature still works)
+    // Fallback: print dialog (still gives a real PDF when "Save as PDF" is chosen)
     const headers = ["Date","Type","Category","Amount","Desc"]
     const rowsHtml = exportRows.map(r => `
       <tr>
@@ -264,52 +282,22 @@ export default function DetailedTab({
           </div>
 
           <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
-            <select
-              className="select"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              title="Filter by type"
-            >
+            <select className="select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} title="Filter by type">
               <option value="all">All Types</option>
               <option value="inflow">Inflows</option>
               <option value="expense">Expenses</option>
             </select>
 
-            <select
-              className="select"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              title="Filter by category"
-            >
+            <select className="select" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} title="Filter by category">
               <option value="">All Categories</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {categories.map((c) => (<option key={c} value={c}>{c}</option>))}
             </select>
 
-            <input
-              className="input"
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              placeholder={startISO}
-              title="From date"
-            />
-            <input
-              className="input"
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              placeholder={endISO}
-              title="To date"
-            />
+            <input className="input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} placeholder={startISO} title="From date" />
+            <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} placeholder={endISO} title="To date" />
 
-            <Button variant="ghost" type="button" onClick={applyCurrentPeriod} title="Set to current period">
-              Current Period
-            </Button>
-            <Button variant="ghost" type="button" onClick={clearFilters} title="Clear">
-              Clear
-            </Button>
+            <Button variant="ghost" type="button" onClick={applyCurrentPeriod} title="Set to current period">Current Period</Button>
+            <Button variant="ghost" type="button" onClick={clearFilters} title="Clear">Clear</Button>
           </div>
         </div>
       </Card>
@@ -322,10 +310,7 @@ export default function DetailedTab({
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-xs text-gray-500">
-              Showing {filtered.length} of {txs.length}
-            </div>
-
+            <div className="text-xs text-gray-500">Showing {filtered.length} of {txs.length}</div>
             <div className="relative">
               <Button type="button" onClick={() => setExportOpen((v) => !v)}>
                 Export ▾
@@ -341,8 +326,8 @@ export default function DetailedTab({
           </div>
         </div>
 
-        {/* This wrapper is what we pass to the PDF exporter */}
-        <div className="overflow-auto" ref={exportContainerRef}>
+        {/* IMPORTANT: this ID is what the PDF util targets */}
+        <div className="overflow-auto" ref={exportContainerRef} id="detailed-export">
           <table className="w-full border-collapse text-xs md:text-sm">
             <thead className="table-head sticky top-0 z-10">
               <tr>
@@ -374,9 +359,7 @@ export default function DetailedTab({
                     <td className="td">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
-                          isExpense
-                            ? "bg-red-50 text-red-700 border-red-200"
-                            : "bg-green-50 text-green-700 border-green-200"
+                          isExpense ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"
                         }`}
                       >
                         {isExpense ? "Expense" : "Inflow"}
