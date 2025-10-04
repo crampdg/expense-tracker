@@ -106,30 +106,21 @@ export default function BudgetEditModal({
               required
             />
 
-            <div className="flex justify-between gap-2">
-              {!isNew ? (
-                <Button
-                  variant="ghost"
-                  className="bg-red-600 text-white hover:bg-red-700 border-transparent"
-                  onClick={onDelete}
-                >
+            <div className="flex justify-end gap-2 flex-wrap">
+              {!isNew && (
+                <Button variant="destructive" onClick={onDelete}>
                   Delete
                 </Button>
-              ) : <div />}
-
-              <div className="flex gap-2">
-                <Button variant="ghost" onClick={onClose}>Cancel</Button>
-                <Button variant="ghost" onClick={() => onClaim?.({ category: form.category.trim(), amount: numberAmount })}>
-                  Claim
-                </Button>
-                <Button
-                  disabled={!canSave}
-                  onClick={handlePrimarySave}
-                >
-                  Save
-                </Button>
-              </div>
+              )}
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button variant="ghost" onClick={() => onClaim?.({ category: form.category.trim(), amount: numberAmount })}>
+                Claim
+              </Button>
+              <Button disabled={!canSave} onClick={handlePrimarySave}>
+                Save
+              </Button>
             </div>
+
           </div>
         </>
       ) : (

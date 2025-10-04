@@ -213,9 +213,22 @@ function App() {
   };
 
 
-  const handleClaimBudget = (section, index, payload) => {
-    console.log("Claiming budget row:", section, index, payload)
-  }
+  const handleClaimBudget = (section, index, { category, amount }) => {
+    // build a real transaction from the budget row
+    const tx = {
+      type: section === "inflows" ? "inflow" : "expense",
+      category: (category ?? "").trim() || "Untitled",
+      amount: Number(amount) || 0,
+      date: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+    };
+
+    // reuse your existing add flow (also auto-adds missing budget rows)
+    handleAddTransaction(tx);  // persists + auto-adds category to budget for new cats. :contentReference[oaicite:1]{index=1}
+
+    // hop to Wallet so the user sees it immediately
+    setActiveTab("wallet");  // valid tab key per BottomNav. :contentReference[oaicite:2]{index=2}
+  };
+
 
   return (
     <div className="flex flex-col h-screen">
