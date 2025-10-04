@@ -83,33 +83,61 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
     [budget]
   )
 
-  // Projection: cap INFLOWS at remaining budget; pace OUTFLOWS by current rate.
+  // Projection: cap INFLOWS at remaining budget;
+  // and cap INVESTMENTS outflows at their budget (pace other outflows).
   const projection = useMemo(() => {
-    if (!isCurrentPeriod) return null
+    if (!isCurrentPeriod) return null;
 
-    // Pacing so far
-    const dailyInflow = inflowsTotal / Math.max(1, daysElapsed)
-    const dailyOutflow = outflowsTotal / Math.max(1, daysElapsed)
+    // Pace to-date
+    const dailyInflow = inflowsTotal / Math.max(1, daysElapsed);
 
-    // Inflows: if a budget exists, do NOT project more than what's left in the budget.
-    const hasInflowBudget = plannedInflows > 0
-    const remainingBudgetedInflows = Math.max(0, plannedInflows - inflowsTotal)
+    // ---------------- Inflows (unchanged): cap at remaining budget if exists ----------------
+    const hasInflowBudget = plannedInflows > 0;
+    const remainingBudgetedInflows = Math.max(0, plannedInflows - inflowsTotal);
     const projectedInflowsRemaining = hasInflowBudget
       ? remainingBudgetedInflows
-      : dailyInflow * daysRemaining
+      : dailyInflow * daysRemaining;
 
-    // Outflows: keep existing behavior (pace).
-    const projectedOutflowsRemaining = dailyOutflow * daysRemaining
+    // ---------------- Outflows: split Investments vs non-Investments ----------------
+    const investCatName = "investments";
 
-    const projectedNetEnd = net + projectedInflowsRemaining - projectedOutflowsRemaining
+    // Budgeted Investments outflow for the period
+    const plannedInvestOutflow = (budget?.outflows || []).reduce((s, r) => {
+      const cat = (r.category || "").toLowerCase().trim();
+      return s + (cat === investCatName ? (Number(r.amount) || 0) : 0);
+    }, 0);
+
+    // Actual Investments outflow to date
+    const investSpentToDate = periodTxs.reduce((s, t) => {
+      if (t.type !== "expense") return s;
+      const cat = (t.category || "").toLowerCase().trim();
+      return s + (cat === investCatName ? (Number(t.amount) || 0) : 0);
+    }, 0);
+
+    // Remaining budget for Investments (do NOT pace beyond this)
+    const remainingBudgetedInvestOut = Math.max(0, plannedInvestOutflow - investSpentToDate);
+
+    // Non-investment outflows to date (these will be paced)
+    const outflowsNonInvestToDate = outflowsTotal - investSpentToDate;
+    const dailyOutflowNonInvest = outflowsNonInvestToDate / Math.max(1, daysElapsed);
+    const projectedNonInvestOutRemaining = dailyOutflowNonInvest * daysRemaining;
+
+    // Total projected outflows remaining = non-invest pace + capped investments
+    const projectedOutflowsRemaining = projectedNonInvestOutRemaining + remainingBudgetedInvestOut;
+
+    const projectedNetEnd = net + projectedInflowsRemaining - projectedOutflowsRemaining;
 
     return {
       projectedNetEnd,
       projectedInflowsRemaining,
       projectedOutflowsRemaining,
-      clampApplied: hasInflowBudget && inflowsTotal >= plannedInflows,
       remainingBudgetedInflows,
-    }
+      remainingBudgetedInvestOut,
+      clampApplied: {
+        inflows: hasInflowBudget && inflowsTotal >= plannedInflows,
+        investments: plannedInvestOutflow > 0 && investSpentToDate >= plannedInvestOutflow,
+      },
+    };
   }, [
     isCurrentPeriod,
     inflowsTotal,
@@ -117,8 +145,11 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
     daysElapsed,
     daysRemaining,
     plannedInflows,
+    budget?.outflows,
     net,
+    periodTxs,
   ])
+
 
   // Top spending categories (distinct insight)
   const outflowByCategory = useMemo(() => {
