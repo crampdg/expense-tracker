@@ -197,7 +197,7 @@ export default function DetailedTab({
     <button
       type="button"
       onClick={() => setTypeFilter(value)}
-      className={`px-3 py-1 rounded-full border text-sm transition
+      className={`px-2.5 py-0.5 rounded-full border text-xs md:text-sm transition
                   ${typeFilter === value ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
       aria-pressed={typeFilter === value}
     >
@@ -212,10 +212,9 @@ export default function DetailedTab({
         <div className="flex items-start md:items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">Detailed</h2>
-            <p className="text-xs text-gray-600">
+            <p className="text-[10.5px] md:text-xs text-gray-600">
               {effectivePeriod.type} • {offsetStart.toDateString()} – {offsetEnd.toDateString()}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
+              <span className="mx-1">•</span>
               Showing <span className="font-medium">{filtered.length}</span>{txs.length ? <> of <span className="font-medium">{txs.length}</span></> : null}
             </p>
           </div>
@@ -238,7 +237,7 @@ export default function DetailedTab({
         </div>
 
         {showFilters && (
-          <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="mt-2 grid grid-cols-2 md:grid-cols-5 gap-2">
             <select className="select" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} title="Filter by category">
               <option value="">All Categories</option>
               {categories.map((c) => (<option key={c} value={c}>{c}</option>))}
