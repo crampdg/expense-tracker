@@ -522,24 +522,38 @@ export default function BudgetTab({
   };
 
   // ---- SECTION TABLE (now sorted; shows per-table totals) -------------------
-  const SectionTable = ({ section, rows = [] }) => {
-    // Sort top-level rows by highest Actual first
+  const SectionTable = ({ section, rows = [], baseRows }) => {
+    // baseRows = the full, original top-level array for this section
+    // rows     = what you are displaying (can be filtered/sorted subset)
+    const top = baseRows ?? rows;
+
+    // Sort only for display, keep original object references
     const sortedRows = useMemo(
       () => (rows ?? []).slice().sort((a, b) => actualForItem(section, b) - actualForItem(section, a)),
-      [rows, inflowActuals, outflowActuals]
+      [rows, inflowActuals, outflowActuals, section]
     );
-    // Section totals (top-level only)
+
     const tableBudgetTotal = useMemo(
       () => (rows ?? []).reduce((s, it) => s + Number(it.amount || 0), 0),
       [rows]
     );
     const tableActualTotal = useMemo(
       () => (rows ?? []).reduce((s, it) => s + actualForItem(section, it), 0),
-      [rows, inflowActuals, outflowActuals]
+      [rows, inflowActuals, outflowActuals, section]
     );
 
-    const renderRow = (item, idx, depth, parentPath) => {
-      const path = [...parentPath, idx];
+    const pathFor = (item, parentRef = null) => {
+      if (!parentRef) {
+        const pi = top.indexOf(item); // index in the ORIGINAL array
+        return [pi];
+      }
+      const pi = top.indexOf(parentRef);
+      const ci = (parentRef?.children || []).indexOf(item);
+      return [pi, ci];
+    };
+
+    const renderRow = (item, depth, parentRef) => {
+      const path = pathFor(item, parentRef);
       const thisKey = keyFor(section, path);
       const isSub = depth === 1;
       const actual = actualForItem(section, item);
@@ -552,7 +566,9 @@ export default function BudgetTab({
               "border-t border-gray-100 relative",
               depth === 0 && isCollapsed(section, path) ? "" : "hover:bg-gray-50",
             ].join(" ")}
-            onClick={editing ? undefined : () => setEditing({ section, path, isNew: false })}
+            onClick={
+              editing ? undefined : () => setEditing({ section, path, isNew: false })
+            }
             data-depth={depth}
           >
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
@@ -593,14 +609,14 @@ export default function BudgetTab({
             <td className="px-4 py-2 text-right tabular-nums">{money(actual)}</td>
           </tr>
 
-          {/* children */}
+          {/* children (sorted for display only) */}
           {!isCollapsed(section, path)
             ? (item.children
                 ? [...item.children].sort(
                     (a, b) => actualForItem(section, b) - actualForItem(section, a)
                   )
                 : []
-              ).map((c, j) => renderRow(c, j, 1, path))
+              ).map((child) => renderRow(child, 1, item))
             : null}
         </>
       );
@@ -624,7 +640,7 @@ export default function BudgetTab({
                 </td>
               </tr>
             ) : (
-              sortedRows.map((it, i) => renderRow(it, i, 0, []))
+              sortedRows.map((it) => renderRow(it, 0, null))
             )}
           </tbody>
           <tfoot>
@@ -642,6 +658,7 @@ export default function BudgetTab({
       </div>
     );
   };
+
 
   // -------------------- UI --------------------
   return (
@@ -748,7 +765,8 @@ export default function BudgetTab({
             + Add
           </Button>
         </div>
-        <SectionTable section="inflows" rows={getArray("inflows")} />
+        <SectionTable section="inflows" rows={getArray("inflows")} baseRows={getArray("inflows")} />
+
 
         <div className="h-px bg-gray-200 my-1" />
 
@@ -769,7 +787,9 @@ export default function BudgetTab({
         <SectionTable
           section="outflows"
           rows={getArray("outflows").filter((r) => (r.type || "variable") === "fixed")}
+          baseRows={getArray("outflows")}
         />
+
 
         <div className="h-px bg-gray-200 my-1" />
 
@@ -790,7 +810,9 @@ export default function BudgetTab({
         <SectionTable
           section="outflows"
           rows={getArray("outflows").filter((r) => (r.type || "variable") === "variable")}
+          baseRows={getArray("outflows")}
         />
+
 
         {/* NET */}
         <div className="px-4 py-3 text-sm border-t border-gray-100">
@@ -857,6 +879,7 @@ export default function BudgetTab({
       {/* Editor modal */}
       <BudgetEditModal
         open={!!editing}
+        onClose={() => setEditing(null)}  // <-- makes Cancel work
         item={
           editing
             ? (() => {
@@ -868,7 +891,7 @@ export default function BudgetTab({
                   };
                 return {
                   ...base,
-                  section: editing.section, // <-- ensure modal knows which section
+                  section: editing.section,
                   ...(editing.section === "outflows"
                     ? { type: base?.type || editing.presetType || "variable" }
                     : {}),
@@ -876,7 +899,6 @@ export default function BudgetTab({
               })()
             : null
         }
-
         isNew={!!editing?.isNew}
         parents={
           editing
