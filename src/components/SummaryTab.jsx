@@ -17,25 +17,10 @@ import SharePDFButton from "./ui/SharePDFButton.jsx"
 import { money } from "../utils/format.js"
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils"
 
-/**
- * SummaryTab — compact, insight-first period summary
- *
- * - Top is compact (mirrors Budget tab’s density).
- * - Removes redundant donut + duplicate inflow/outflow tiles.
- * - Adds Cashflow Timeline (cumulative net by day) for unique insight.
- * - Keeps Top Spending Categories (distinct info).
- * - Adds Projection (current period only) and Recent Activity (last 5).
- *
- * Props:
- * - transactions: [{ type: 'inflow'|'expense', amount, category, date: 'YYYY-MM-DD', ... }]
- * - budget: (unused here; kept for parity)
- * - period: { type, anchorDate }   // shared with BudgetTab
- * - periodOffset: number           // shared with BudgetTab
- */
 export default function SummaryTab({ transactions, budget, period, periodOffset }) {
   const txs = Array.isArray(transactions) ? transactions : []
 
-  // Respect BudgetTab's selected period if provided; otherwise fallback to saved/default.
+  // Period from shared state (synced with Budget tab)
   const effectivePeriod = useMemo(() => {
     if (period?.type && period?.anchorDate) return period
     try {
@@ -49,7 +34,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
   }, [period?.type, period?.anchorDate])
 
   const effectiveOffset = typeof periodOffset === "number" ? periodOffset : 0
-
   const offsetStart = useMemo(
     () => getAnchoredPeriodStart(effectivePeriod.type, effectivePeriod.anchorDate, new Date(), effectiveOffset),
     [effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset]
@@ -66,23 +50,18 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
   const dayMs = 24 * 60 * 60 * 1000
   const isCurrentPeriod = effectiveOffset === 0
   const daysTotal = Math.round((offsetEnd - offsetStart) / dayMs) + 1
-
   const today = new Date()
   const clampedToday = new Date(Math.min(today.getTime(), offsetEnd.getTime()))
   const daysElapsed = Math.max(1, Math.round((clampedToday - offsetStart) / dayMs) + 1)
+  const daysRemaining = Math.max(0, daysTotal - daysElapsed)
 
-  const daysLabel = isCurrentPeriod ? "Days Left" : "Days in Period"
-  const daysValue = isCurrentPeriod
-    ? Math.max(0, Math.ceil((offsetEnd - today) / dayMs))
-    : daysTotal
-
-  // Period-scope txs
+  // Period transactions
   const periodTxs = useMemo(
     () => txs.filter((t) => t?.date && t.date >= startISO && t.date <= endISO),
     [txs, startISO, endISO]
   )
 
-  // Totals
+  // Totals to date
   const inflowsTotal = useMemo(
     () => periodTxs.filter((t) => t.type === "inflow").reduce((s, t) => s + Number(t.amount || 0), 0),
     [periodTxs]
@@ -92,9 +71,56 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
     [periodTxs]
   )
   const net = inflowsTotal - outflowsTotal
-  const savingsRate = inflowsTotal > 0 ? net / inflowsTotal : 0 // % of inflows kept
+  const savingsRate = inflowsTotal > 0 ? net / inflowsTotal : 0
 
-  // Top outflow categories (top 5)
+  // Budgeted totals (if provided)
+  const plannedInflows = useMemo(
+    () => (budget?.inflows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0),
+    [budget]
+  )
+  const plannedOutflows = useMemo(
+    () => (budget?.outflows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0),
+    [budget]
+  )
+
+  // Projection: cap INFLOWS at remaining budget; pace OUTFLOWS by current rate.
+  const projection = useMemo(() => {
+    if (!isCurrentPeriod) return null
+
+    // Pacing so far
+    const dailyInflow = inflowsTotal / Math.max(1, daysElapsed)
+    const dailyOutflow = outflowsTotal / Math.max(1, daysElapsed)
+
+    // Inflows: if a budget exists, do NOT project more than what's left in the budget.
+    const hasInflowBudget = plannedInflows > 0
+    const remainingBudgetedInflows = Math.max(0, plannedInflows - inflowsTotal)
+    const projectedInflowsRemaining = hasInflowBudget
+      ? remainingBudgetedInflows
+      : dailyInflow * daysRemaining
+
+    // Outflows: keep existing behavior (pace).
+    const projectedOutflowsRemaining = dailyOutflow * daysRemaining
+
+    const projectedNetEnd = net + projectedInflowsRemaining - projectedOutflowsRemaining
+
+    return {
+      projectedNetEnd,
+      projectedInflowsRemaining,
+      projectedOutflowsRemaining,
+      clampApplied: hasInflowBudget && inflowsTotal >= plannedInflows,
+      remainingBudgetedInflows,
+    }
+  }, [
+    isCurrentPeriod,
+    inflowsTotal,
+    outflowsTotal,
+    daysElapsed,
+    daysRemaining,
+    plannedInflows,
+    net,
+  ])
+
+  // Top spending categories (distinct insight)
   const outflowByCategory = useMemo(() => {
     const m = {}
     for (const t of periodTxs) {
@@ -108,19 +134,16 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
       .slice(0, 5)
   }, [periodTxs])
 
-  // Recent activity (last 5 by date, desc)
   const recentTxs = useMemo(() => {
     const sorted = [...periodTxs].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     return sorted.slice(0, 5)
   }, [periodTxs])
 
-  // Cashflow timeline (cumulative net by day)
+  // Cashflow timeline (cumulative net)
   const cashflowSeries = useMemo(() => {
-    // Daily net map
     const daily = new Map()
     for (let t = new Date(offsetStart); t <= offsetEnd; t = new Date(t.getTime() + dayMs)) {
-      const d = t.toISOString().slice(0, 10)
-      daily.set(d, 0)
+      daily.set(t.toISOString().slice(0, 10), 0)
     }
     for (const tx of periodTxs) {
       const d = tx.date
@@ -128,7 +151,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
       const delta = tx.type === "inflow" ? Number(tx.amount || 0) : -Number(tx.amount || 0)
       daily.set(d, (daily.get(d) || 0) + delta)
     }
-    // Accumulate
     let running = 0
     const series = []
     for (let t = new Date(offsetStart); t <= offsetEnd; t = new Date(t.getTime() + dayMs)) {
@@ -138,13 +160,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
     }
     return series
   }, [periodTxs, offsetStart, offsetEnd])
-
-  // Projection (current period only)
-  const projectedNet = useMemo(() => {
-    if (!isCurrentPeriod) return null
-    const dailyNet = net / daysElapsed
-    return dailyNet * daysTotal
-  }, [isCurrentPeriod, net, daysElapsed, daysTotal])
 
   const topCategory = outflowByCategory[0]
   const concentration =
@@ -168,7 +183,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
         </div>
       </div>
 
-      {/* Ultra-compact stat strip (no duplicate tiles) */}
+      {/* Stat strip */}
       <div className="grid grid-cols-3 gap-2">
         <Card>
           <div className="text-center">
@@ -184,13 +199,13 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
         </Card>
         <Card>
           <div className="text-center">
-            <div className="font-semibold">{daysLabel}</div>
-            <div>{daysValue}</div>
+            <div className="font-semibold">{isCurrentPeriod ? "Days Left" : "Days in Period"}</div>
+            <div>{isCurrentPeriod ? daysRemaining : daysTotal}</div>
           </div>
         </Card>
       </div>
 
-      {/* Unique insight: Cashflow Timeline */}
+      {/* Cashflow Timeline (unique insight) */}
       <Card>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Cashflow Timeline</h3>
@@ -208,7 +223,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
         </ResponsiveContainer>
       </Card>
 
-      {/* Category insight (kept — distinct info) */}
+      {/* Top Spending Categories */}
       {outflowByCategory.length > 0 && (
         <Card>
           <div className="flex items-center justify-between mb-2">
@@ -231,20 +246,31 @@ export default function SummaryTab({ transactions, budget, period, periodOffset 
       )}
 
       {/* Projection (current period only) */}
-      {isCurrentPeriod && projectedNet !== null && (
+      {isCurrentPeriod && projection && (
         <Card>
           <h3 className="font-semibold mb-1">Projection</h3>
           <p className="text-sm text-gray-700">
-            Based on your average daily net so far, you’re on pace for{" "}
-            <span className={projectedNet >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
-              {money(projectedNet)}
-            </span>{" "}
-            by period end.
+            By period end you’re on pace for{" "}
+            <span
+              className={
+                projection.projectedNetEnd >= 0
+                  ? "text-green-600 font-medium"
+                  : "text-red-600 font-medium"
+              }
+            >
+              {money(projection.projectedNetEnd)}
+            </span>
+            .
           </p>
+          {plannedInflows > 0 && (
+            <p className="text-xs text-gray-500 mt-1">
+              Inflows capped at budget (remaining {money(projection.remainingBudgetedInflows)}); outflows projected by current pace.
+            </p>
+          )}
         </Card>
       )}
 
-      {/* Recent activity peek (adds utility without duplicating Detailed tab) */}
+      {/* Recent activity */}
       {recentTxs.length > 0 && (
         <Card>
           <h3 className="font-semibold mb-2">Recent Activity</h3>
