@@ -859,14 +859,24 @@ export default function BudgetTab({
         open={!!editing}
         item={
           editing
-            ? getItemAtPath(editing.section, editing.path) || {
-                category: "",
-                amount: 0,
-                section: editing.section,
-                type: editing.section === "outflows" ? editing.presetType || "variable" : undefined,
-              }
+            ? (() => {
+                const base =
+                  getItemAtPath(editing.section, editing.path) || {
+                    category: "",
+                    amount: 0,
+                    children: [],
+                  };
+                return {
+                  ...base,
+                  section: editing.section, // <-- ensure modal knows which section
+                  ...(editing.section === "outflows"
+                    ? { type: base?.type || editing.presetType || "variable" }
+                    : {}),
+                };
+              })()
             : null
         }
+
         isNew={!!editing?.isNew}
         parents={
           editing

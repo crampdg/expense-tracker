@@ -1,14 +1,14 @@
 import Modal from '../ui/Modal.jsx'
 import Button from '../ui/Button.jsx'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 /**
  * Props:
  * - open, onClose
- * - item: { category, amount, section, type? }  // 'type' used for outflows only
+ * - item: { category, amount, section, type? }  // section is required; type used for outflows
  * - isNew: boolean
- * - parents: string[]           // list of existing top-level parents in this section (excluding self)
- * - currentParent: string|null  // the row's current parent name, or null if top-level
+ * - parents: string[]
+ * - currentParent: string|null
  * - onSave(form, scope) -> scope: "all" | "period" | "none"
  *      form = { category: string, amount: number, parent: string|null, type?: "fixed"|"variable" }
  * - onDelete()
@@ -34,14 +34,18 @@ export default function BudgetEditModal({
     category: '',
     amount: '',
     parent: '', // '' => top-level
-    type: '',   // 'fixed' | 'variable' (outflows only; top-level only)
+    type: '',   // 'fixed' | 'variable' (outflows top-level only)
   })
-  const [renameScope, setRenameScope] = useState('all') // "all" | "period" | "none"
+  const [renameScope, setRenameScope] = useState('all') // default if renaming
+
+  // track original category to detect rename
+  const originalCategoryRef = useRef('')
 
   // When the modal opens or the selected row changes, re-init the form
   const itemKey = item ? `${item.section || ''}::${item.category || ''}::${item.amount ?? ''}` : ''
   useEffect(() => {
     if (!open || !item) return
+    originalCategoryRef.current = item.category || ''
     setForm({
       category: item.category || '',
       amount: item.amount ?? '',
@@ -53,17 +57,20 @@ export default function BudgetEditModal({
   }, [open, itemKey])
 
   const parentIsSelected = !!form.parent && form.parent.trim().length > 0
-  const showTypeSelector = isOutflows && !parentIsSelected // only for top-level outflows
+  const showTypeSelector = isOutflows && !parentIsSelected // top-level Outflows only
+
+  const renamed =
+    (form.category || '').trim() !== (originalCategoryRef.current || '').trim()
 
   const handleSave = () => {
     const payload = {
       category: (form.category || '').trim() || 'Untitled',
-      // Top-level rows can set amount; sub-rows always have amount=0 and sum via children
       amount: parentIsSelected ? 0 : Number(form.amount || 0),
       parent: parentIsSelected ? form.parent : null,
       ...(isOutflows ? { type: showTypeSelector ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined } : {}),
     }
-    onSave?.(payload, renameScope)
+    const scope = renamed ? renameScope : 'none' // only ask to rename when name actually changed
+    onSave?.(payload, scope)
     onClose?.()
   }
 
@@ -73,7 +80,6 @@ export default function BudgetEditModal({
   }
 
   const handleClaim = () => {
-    // Claim only really makes sense for top-level lines
     const payload = {
       category: (form.category || '').trim() || 'Untitled',
       amount: Number(form.amount || 0),
@@ -157,7 +163,7 @@ export default function BudgetEditModal({
     </div>
   )
 
-  const RenameScope = (
+  const RenameScope = !renamed ? null : (
     <div className="grid grid-cols-1 gap-2">
       <label className="text-xs text-gray-600">Rename scope</label>
       <select
@@ -197,7 +203,7 @@ export default function BudgetEditModal({
           {/* Amount (disabled when parent is set) */}
           {AmountField}
 
-          {/* Rename scope (only makes sense when editing existing OR renaming on save) */}
+          {/* Rename scope (only shows if you actually changed the name) */}
           {RenameScope}
 
           {/* Actions */}
