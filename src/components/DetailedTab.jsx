@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import Card from "./ui/Card.jsx"
 import Button from "./ui/Button.jsx"
 import { money } from "../utils/format.js"
@@ -15,7 +15,7 @@ export default function DetailedTab({
 }) {
   const txs = Array.isArray(transactions) ? transactions : []
 
-  // ---------- Period Context (align w/ Budget & Summary) ----------
+  // ---------- Period Context ----------
   const effectivePeriod = useMemo(() => {
     if (period?.type && period?.anchorDate) return period
     try {
@@ -75,7 +75,7 @@ export default function DetailedTab({
         if (typeFilter !== "all" && t.type !== typeFilter) return false
         if (categoryFilter && t.category !== categoryFilter) return false
         if (df || dt) {
-          const td = t.date ? new Date(t.date + "T12:00:00") : null // noon to avoid TZ edge
+          const td = t.date ? new Date(t.date + "T12:00:00") : null
           if (!td) return false
           if (df && td < df) return false
           if (dt && td > dt) return false
@@ -83,7 +83,6 @@ export default function DetailedTab({
         return true
       })
       .sort((a, b) => {
-        // most recent first, then by id as tiebreaker
         const ad = a.date ? new Date(a.date) : new Date(0)
         const bd = b.date ? new Date(b.date) : new Date(0)
         if (bd - ad !== 0) return bd - ad
@@ -99,33 +98,29 @@ export default function DetailedTab({
       if (t.type === "inflow") inflows += amt
       else if (t.type === "expense") outflows += amt
     }
-    return {
-      inflows,
-      outflows,
-      net: inflows - outflows,
-    }
+    return { inflows, outflows, net: inflows - outflows }
   }, [filtered])
 
-  // ---------- Editing (local modal) ----------
+  // ---------- Editing ----------
   const [editingTx, setEditingTx] = useState(null)
   const onEdit = (tx) => setEditingTx(tx)
   const onDelete = (id) => deleteTransaction?.(id)
 
   // ---------- Export ----------
   const [exportOpen, setExportOpen] = useState(false)
+  const exportContainerRef = useRef(null) // what we'll pass to pdf exporter
 
   const exportRows = useMemo(() => {
     return filtered.map((t) => {
       const isExpense = t.type === "expense"
       const amt = Number(t.amount) || 0
       const dateStr = t.date ? new Date(t.date + "T00:00:00").toLocaleDateString() : ""
-      // Be tolerant of different field names for description
       const desc = (t.desc ?? t.description ?? t.note ?? "").toString()
       return {
         Date: dateStr,
         Type: isExpense ? "Expense" : "Inflow",
         Category: t.category || "Uncategorized",
-        Amount: isExpense ? -Math.abs(amt) : Math.abs(amt), // signed number for exports
+        Amount: isExpense ? -Math.abs(amt) : Math.abs(amt),
         Desc: desc,
       }
     })
@@ -161,7 +156,7 @@ export default function DetailedTab({
     setExportOpen(false)
   }
 
-  // Minimal Excel export using HTML table with Excel MIME (opens in Excel)
+  // Minimal Excel export using HTML table
   const exportExcel = () => {
     const headers = ["Date","Type","Category","Amount","Desc"]
     const tableRows = exportRows.map(r =>
@@ -179,10 +174,36 @@ export default function DetailedTab({
     setExportOpen(false)
   }
 
-  // Print-to-PDF via browser print dialog
-  const exportPDF = () => {
-    const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=700")
-    if (!win) return
+  // Try to match the app's existing PDF exporter (same as Budget/Summary)
+  const exportPDF = async () => {
+    const filename = `transactions_${fileTimestamp()}.pdf`
+    const el = exportContainerRef.current
+
+    // 1) Try the shared utils/pdfExport.js (common function names)
+    try {
+      const mod = await import("../utils/pdfExport.js")
+      const maybeFns = [
+        "exportElementToPDF",  // (element, filename) => Promise<void>
+        "exportElToPDF",
+        "exportTableToPDF",
+        "exportToPDF",
+        "exportPDF",
+        "default",             // default export might be a function
+      ].filter((k) => k in mod)
+
+      if (maybeFns.length) {
+        const fn = mod[maybeFns[0]]
+        if (typeof fn === "function") {
+          await fn(el, filename)
+          setExportOpen(false)
+          return
+        }
+      }
+    } catch (_) {
+      // ignore and fall back
+    }
+
+    // 2) Fallback: print dialog (ensures feature still works)
     const headers = ["Date","Type","Category","Amount","Desc"]
     const rowsHtml = exportRows.map(r => `
       <tr>
@@ -192,45 +213,47 @@ export default function DetailedTab({
         <td style="text-align:right;">${r.Amount}</td>
         <td>${(r.Desc || "").toString().replace(/</g,"&lt;").replace(/>/g,"&gt;")}</td>
       </tr>`).join("")
-    win.document.write(`
-      <html>
-        <head>
-          <meta charset="utf-8"/>
-          <title>Transactions</title>
-          <style>
-            body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
-            h1 { margin: 0 0 12px 0; font-size: 18px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ddd; padding: 6px 8px; }
-            th { background: #f3f4f6; text-align: left; }
-            tfoot td { font-weight: 600; }
-          </style>
-        </head>
-        <body>
-          <h1>Transactions Export</h1>
-          <div style="margin: 6px 0 14px 0;">Generated: ${new Date().toLocaleString()}</div>
-          <table>
-            <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
-            <tbody>${rowsHtml}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="3">Totals</td>
-                <td style="text-align:right;">${(totals.net).toFixed(2)}</td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-          <script>window.onload = () => { window.print(); }</script>
-        </body>
-      </html>
-    `)
-    win.document.close()
+    const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=700")
+    if (win) {
+      win.document.write(`
+        <html>
+          <head>
+            <meta charset="utf-8"/>
+            <title>Transactions</title>
+            <style>
+              body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
+              h1 { margin: 0 0 12px 0; font-size: 18px; }
+              table { width: 100%; border-collapse: collapse; font-size: 12px; }
+              th, td { border: 1px solid #ddd; padding: 6px 8px; }
+              th { background: #f3f4f6; text-align: left; }
+              tfoot td { font-weight: 600; }
+            </style>
+          </head>
+          <body>
+            <h1>Transactions Export</h1>
+            <div style="margin: 6px 0 14px 0;">Generated: ${new Date().toLocaleString()}</div>
+            <table>
+              <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+              <tbody>${rowsHtml}</tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="3">Totals</td>
+                  <td style="text-align:right;">${(totals.net).toFixed(2)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+            <script>window.onload = () => { window.print(); }</script>
+          </body>
+        </html>
+      `)
+      win.document.close()
+    }
     setExportOpen(false)
   }
 
   return (
     <div className="space-y-4">
-      {/* Header / Period context */}
       <Card className="p-4 md:p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -240,7 +263,6 @@ export default function DetailedTab({
             </p>
           </div>
 
-          {/* Filters */}
           <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
             <select
               className="select"
@@ -285,14 +307,13 @@ export default function DetailedTab({
             <Button variant="ghost" type="button" onClick={applyCurrentPeriod} title="Set to current period">
               Current Period
             </Button>
-            <Button variant="ghost" type="button" onClick={clearFilters} title="Clear filters">
+            <Button variant="ghost" type="button" onClick={clearFilters} title="Clear">
               Clear
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* Table */}
       <Card className="p-0 overflow-hidden">
         <div className="flex items-center justify-between p-4 pb-3">
           <div className="flex items-center gap-3">
@@ -310,7 +331,7 @@ export default function DetailedTab({
                 Export ▾
               </Button>
               {exportOpen && (
-                <div className="absolute right-0 mt-1 w-40 rounded-md border bg-white shadow-md z-20">
+                <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-md z-20">
                   <button className="w-full text-left px-3 py-2 hover:bg-gray-50" onClick={exportPDF}>Export as PDF</button>
                   <button className="w-full text-left px-3 py-2 hover:bg-gray-50" onClick={exportCSV}>Export as CSV</button>
                   <button className="w-full text-left px-3 py-2 hover:bg-gray-50" onClick={exportExcel}>Export as Excel</button>
@@ -320,7 +341,8 @@ export default function DetailedTab({
           </div>
         </div>
 
-        <div className="overflow-auto">
+        {/* This wrapper is what we pass to the PDF exporter */}
+        <div className="overflow-auto" ref={exportContainerRef}>
           <table className="w-full border-collapse text-xs md:text-sm">
             <thead className="table-head sticky top-0 z-10">
               <tr>
@@ -378,7 +400,6 @@ export default function DetailedTab({
               )}
             </tbody>
 
-            {/* Totals */}
             <tfoot>
               <tr>
                 <td className="th" colSpan={2}>Totals</td>
@@ -396,7 +417,6 @@ export default function DetailedTab({
         </div>
       </Card>
 
-      {/* Local edit modal (reuses your existing component) */}
       {editingTx && (
         <TransactionEditModal
           open={!!editingTx}
