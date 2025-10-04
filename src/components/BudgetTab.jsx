@@ -109,15 +109,15 @@ export default function BudgetTab({
 
   // -------------------- Period math --------------------
   const offsetStart = useMemo(
-    () => getAnchoredPeriodStart(safePeriod.type, safePeriod.anchorDate, periodOffset)
-
-    [period.type, period.anchorDate, periodOffset]
+    () => getAnchoredPeriodStart(safePeriod.type, safePeriod.anchorDate, periodOffset),
+    [safePeriod.type, safePeriod.anchorDate, periodOffset]
   );
+
   const offsetEnd = useMemo(
-    () => calcPeriodEnd(safePeriod.type, offsetStart)
-
-    [period.type, offsetStart]
+    () => calcPeriodEnd(safePeriod.type, offsetStart),
+    [safePeriod.type, offsetStart]
   );
+
   const startISO = offsetStart.toISOString().slice(0, 10);
   const endISO = offsetEnd.toISOString().slice(0, 10);
 
@@ -602,13 +602,13 @@ export default function BudgetTab({
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-2">
             <label className="text-xs text-gray-600">Type</label>
-            <select value={period.type} onChange={(e) => setPeriod((p) => ({ ...p, type: e.target.value }))} className="select">
+            <select value={safePeriod.type} onChange={(e) => setPeriod((p) => ({ ...p, type: e.target.value }))} className="select">
               <option>Monthly</option><option>Biweekly</option><option>Weekly</option><option>SemiMonthly</option><option>Annually</option>
             </select>
           </div>
           <div className="grid grid-cols-1 gap-2">
             <label className="text-xs text-gray-600">Anchor date</label>
-            <input type="date" value={period.anchorDate} onChange={(e) => setPeriod((p) => ({ ...p, anchorDate: e.target.value }))} className="input" />
+            <input type="date" value={safePeriod.anchorDate} onChange={(e) => setPeriod((p) => ({ ...p, anchorDate: e.target.value }))} className="input" />
           </div>
           <div className="pt-1 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setPeriodOpen(false)}>Close</Button>
