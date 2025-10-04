@@ -323,9 +323,10 @@ export default function BudgetTab({
 
   const startLongPress = (e, section, path) => {
     if (e.button === 2) return; // ignore right-click
+    if (drag) return; // avoid duplicate timers/starts
     const startX = e.clientX ?? (e.touches?.[0]?.clientX || 0);
     const startY = e.clientY ?? (e.touches?.[0]?.clientY || 0);
-    const pointerId = e.pointerId;
+    const pointerId = e.pointerId ?? 1;
 
     const ref = rowRefs.current.get(keyFor(section, path));
     const rowEl = ref?.el;
@@ -415,15 +416,24 @@ export default function BudgetTab({
       setHoverParent(null);
     };
 
-    // Pointer events only (less duplication/bugs than mixing with touch events)
+    // Pointer events (primary path)
     document.addEventListener("pointermove", onMove, { passive: false, capture: true });
     document.addEventListener("pointerup", endDrag, { passive: false, capture: true });
     document.addEventListener("pointercancel", endDrag, { passive: false, capture: true });
+
+    // Touch fallbacks (some iOS edge cases)
+    const onTouchMovePrevent = (e) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    document.addEventListener("touchmove", onTouchMovePrevent, { passive: false, capture: true });
+    document.addEventListener("touchend", endDrag, { passive: false, capture: true });
 
     return () => {
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("pointerup", endDrag, true);
       document.removeEventListener("pointercancel", endDrag, true);
+      document.removeEventListener("touchmove", onTouchMovePrevent, true);
+      document.removeEventListener("touchend", endDrag, true);
     };
   }, [drag, indicator, hoverParent]); // eslint-disable-line
 
@@ -464,7 +474,7 @@ export default function BudgetTab({
             ].join(" ")}
             onClick={() => setEditing({ section, path, isNew: false, isSub })}
             onPointerDown={(e) => startLongPress(e, section, path)}
-            onTouchStart={(e) => startLongPress(e, section, path)}
+            onContextMenu={(e) => e.preventDefault()}
             data-depth={depth}
           >
             <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
@@ -528,7 +538,7 @@ export default function BudgetTab({
         <Card className="p-3 md:p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <h2 className="text-base font-semibold tracking-tight">Budget</h2>
+              <h2 className="text(base font-semibold tracking-tight">Budget</h2>
               <div className="text-[11px] md:text-xs text-gray-600">
                 {offsetStart.toDateString()} – {offsetEnd.toDateString()}
               </div>
