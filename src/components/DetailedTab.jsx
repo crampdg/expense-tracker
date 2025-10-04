@@ -10,7 +10,6 @@ export default function DetailedTab({
   budget,
   editTransaction,      // (updatedTx) => void
   deleteTransaction,    // (id) => void
-  // Optional: if App ever passes these, we’ll use them; otherwise fallback to localStorage config
   period,
   periodOffset,
 }) {
@@ -39,10 +38,11 @@ export default function DetailedTab({
     () => calcPeriodEnd(effectivePeriod.type, offsetStart),
     [effectivePeriod.type, offsetStart]
   )
+
   const startISO = offsetStart.toISOString().slice(0, 10)
   const endISO = offsetEnd.toISOString().slice(0, 10)
 
-  // ---------- Filters ----------
+  // ---------- Filters (DEFAULT = NO FILTER) ----------
   const categories = useMemo(() => {
     const inflowCats = (budget?.inflows || []).map((i) => i.category)
     const outflowCats = (budget?.outflows || []).map((o) => o.category)
@@ -51,8 +51,8 @@ export default function DetailedTab({
 
   const [typeFilter, setTypeFilter] = useState("all") // all | inflow | expense
   const [categoryFilter, setCategoryFilter] = useState("")
-  const [dateFrom, setDateFrom] = useState(startISO)
-  const [dateTo, setDateTo] = useState(endISO)
+  const [dateFrom, setDateFrom] = useState("") // blank = no date filter
+  const [dateTo, setDateTo] = useState("")     // blank = no date filter
 
   const applyCurrentPeriod = () => {
     setDateFrom(startISO)
@@ -108,9 +108,125 @@ export default function DetailedTab({
 
   // ---------- Editing (local modal) ----------
   const [editingTx, setEditingTx] = useState(null)
-
   const onEdit = (tx) => setEditingTx(tx)
   const onDelete = (id) => deleteTransaction?.(id)
+
+  // ---------- Export ----------
+  const [exportOpen, setExportOpen] = useState(false)
+
+  const exportRows = useMemo(() => {
+    return filtered.map((t) => {
+      const isExpense = t.type === "expense"
+      const amt = Number(t.amount) || 0
+      const dateStr = t.date ? new Date(t.date + "T00:00:00").toLocaleDateString() : ""
+      // Be tolerant of different field names for description
+      const desc = (t.desc ?? t.description ?? t.note ?? "").toString()
+      return {
+        Date: dateStr,
+        Type: isExpense ? "Expense" : "Inflow",
+        Category: t.category || "Uncategorized",
+        Amount: isExpense ? -Math.abs(amt) : Math.abs(amt), // signed number for exports
+        Desc: desc,
+      }
+    })
+  }, [filtered])
+
+  const fileTimestamp = () => {
+    const d = new Date()
+    const pad = (n) => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
+  }
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportCSV = () => {
+    const headers = ["Date","Type","Category","Amount","Desc"]
+    const escape = (v) => {
+      const s = (v ?? "").toString().replace(/"/g, '""')
+      return /[",\n]/.test(s) ? `"${s}"` : s
+    }
+    const lines = [
+      headers.join(","),
+      ...exportRows.map(r => headers.map(h => escape(r[h])).join(",")),
+    ]
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" })
+    downloadBlob(blob, `transactions_${fileTimestamp()}.csv`)
+    setExportOpen(false)
+  }
+
+  // Minimal Excel export using HTML table with Excel MIME (opens in Excel)
+  const exportExcel = () => {
+    const headers = ["Date","Type","Category","Amount","Desc"]
+    const tableRows = exportRows.map(r =>
+      `<tr>${headers.map(h => `<td>${String(r[h] ?? "")}</td>`).join("")}</tr>`
+    ).join("")
+    const html =
+      `<html><head><meta charset="UTF-8"></head><body>
+         <table border="1">
+           <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+           <tbody>${tableRows}</tbody>
+         </table>
+       </body></html>`
+    const blob = new Blob([html], { type: "application/vnd.ms-excel" })
+    downloadBlob(blob, `transactions_${fileTimestamp()}.xls`)
+    setExportOpen(false)
+  }
+
+  // Print-to-PDF via browser print dialog
+  const exportPDF = () => {
+    const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=700")
+    if (!win) return
+    const headers = ["Date","Type","Category","Amount","Desc"]
+    const rowsHtml = exportRows.map(r => `
+      <tr>
+        <td>${r.Date}</td>
+        <td>${r.Type}</td>
+        <td>${r.Category}</td>
+        <td style="text-align:right;">${r.Amount}</td>
+        <td>${(r.Desc || "").toString().replace(/</g,"&lt;").replace(/>/g,"&gt;")}</td>
+      </tr>`).join("")
+    win.document.write(`
+      <html>
+        <head>
+          <meta charset="utf-8"/>
+          <title>Transactions</title>
+          <style>
+            body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
+            h1 { margin: 0 0 12px 0; font-size: 18px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ddd; padding: 6px 8px; }
+            th { background: #f3f4f6; text-align: left; }
+            tfoot td { font-weight: 600; }
+          </style>
+        </head>
+        <body>
+          <h1>Transactions Export</h1>
+          <div style="margin: 6px 0 14px 0;">Generated: ${new Date().toLocaleString()}</div>
+          <table>
+            <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3">Totals</td>
+                <td style="text-align:right;">${(totals.net).toFixed(2)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+          <script>window.onload = () => { window.print(); }</script>
+        </body>
+      </html>
+    `)
+    win.document.close()
+    setExportOpen(false)
+  }
 
   return (
     <div className="space-y-4">
@@ -154,6 +270,7 @@ export default function DetailedTab({
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
+              placeholder={startISO}
               title="From date"
             />
             <input
@@ -161,6 +278,7 @@ export default function DetailedTab({
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
+              placeholder={endISO}
               title="To date"
             />
 
@@ -177,9 +295,28 @@ export default function DetailedTab({
       {/* Table */}
       <Card className="p-0 overflow-hidden">
         <div className="flex items-center justify-between p-4 pb-3">
-          <h3 className="font-semibold">Transactions</h3>
-          <div className="text-xs text-gray-500">
-            Showing {filtered.length} of {txs.length}
+          <div className="flex items-center gap-3">
+            <h3 className="font-semibold">Transactions</h3>
+            <span className="text-xs text-gray-500 hidden md:inline">Tip: click a row to edit/delete</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-gray-500">
+              Showing {filtered.length} of {txs.length}
+            </div>
+
+            <div className="relative">
+              <Button type="button" onClick={() => setExportOpen((v) => !v)}>
+                Export ▾
+              </Button>
+              {exportOpen && (
+                <div className="absolute right-0 mt-1 w-40 rounded-md border bg-white shadow-md z-20">
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50" onClick={exportPDF}>Export as PDF</button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50" onClick={exportCSV}>Export as CSV</button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-gray-50" onClick={exportExcel}>Export as Excel</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -191,7 +328,7 @@ export default function DetailedTab({
                 <th className="th w-[6.5rem]">Type</th>
                 <th className="th">Category</th>
                 <th className="th text-right w-[8rem]">Amount</th>
-                <th className="th text-right w-[7rem]">Actions</th>
+                <th className="th">Desc</th>
               </tr>
             </thead>
             <tbody>
@@ -199,9 +336,18 @@ export default function DetailedTab({
                 const isExpense = t.type === "expense"
                 const amt = Number(t.amount) || 0
                 const dateStr = t.date ? new Date(t.date + "T00:00:00").toLocaleDateString() : "—"
+                const desc = (t.desc ?? t.description ?? t.note ?? "").toString()
+
                 return (
-                  <tr key={t.id ?? `${t.category}-${t.date}-${amt}`}
-                      className="odd:bg-white even:bg-gray-50/40 hover:bg-gray-50">
+                  <tr
+                    key={t.id ?? `${t.category}-${t.date}-${amt}`}
+                    className="odd:bg-white even:bg-gray-50/40 hover:bg-gray-50 cursor-pointer"
+                    onClick={() => onEdit(t)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEdit(t)}
+                    title="Click to edit/delete"
+                  >
                     <td className="td">{dateStr}</td>
                     <td className="td">
                       <span
@@ -218,28 +364,7 @@ export default function DetailedTab({
                     <td className={`td text-right tabular-nums ${isExpense ? "text-red-600" : "text-green-700"}`}>
                       {isExpense ? "-" : "+"}{money(amt)}
                     </td>
-                    <td className="td text-right">
-                      <div className="inline-flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          onClick={() => onEdit(t)}
-                          title="Edit"
-                        >
-                          ✏️ Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          onClick={() => onDelete(t.id)}
-                          title="Delete"
-                        >
-                          🗑️ Delete
-                        </Button>
-                      </div>
-                    </td>
+                    <td className="td">{desc || "—"}</td>
                   </tr>
                 )
               })}

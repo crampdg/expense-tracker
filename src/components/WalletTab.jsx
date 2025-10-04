@@ -390,7 +390,8 @@ function withdrawNow() {
         </button>
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          /* INVESTMENTS BUCKET (collapsible) */
+          {/* INVESTMENTS BUCKET (collapsible) */}
+          
           <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
             {/* Header row: label + chevron (APR shows only when open) */}
             <button
