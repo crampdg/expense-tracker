@@ -72,6 +72,77 @@ function accrueInvestMonthly(state, today = new Date()) {
   return updated;
 }
 
+// ---- Rebuild Investments from transactions (single source of truth) ----
+function listInvestEventsFromTxs(transactions = []) {
+  const events = [];
+  for (const t of transactions) {
+    if (!t?.date) continue;
+    const amt = Math.max(0, Number(t.amount) || 0);
+    if (amt <= 0) continue;
+
+    const meta = t.meta || {};
+    const cat = (t.category || "").toLowerCase().trim();
+    const isInvest = meta.investment === true || cat === "investments";
+
+    if (!isInvest) continue;
+
+    // Prefer explicit meta action; otherwise infer from type
+    const action = (meta.action || "").toLowerCase();
+    let kind = null; // 'invest' | 'withdraw'
+    if (action === "invest") kind = "invest";
+    else if (action === "withdraw") kind = "withdraw";
+    else if (t.type === "expense") kind = "invest";      // expense to Investments = invest
+    else if (t.type === "inflow") kind = "withdraw";     // inflow from Investments = withdraw
+
+    if (!kind) continue;
+    events.push({ date: t.date, amount: amt, kind });
+  }
+  events.sort((a, b) => a.date.localeCompare(b.date));
+  return events;
+}
+
+function rebuildInvestFromTransactions(apr, transactions, today = new Date()) {
+  const events = listInvestEventsFromTxs(transactions);
+  const monthly = Math.max(0, Number(apr) || 0) / 12;
+
+  if (events.length === 0) {
+    const todayISO = today.toISOString().slice(0, 10);
+    return { balance: 0, principal: 0, lastAccruedISO: todayISO };
+  }
+
+  let state = { balance: 0, principal: 0, lastAccruedISO: events[0].date };
+  const accrueTo = (toISO) => {
+    const m = monthsBetween(state.lastAccruedISO, toISO);
+    if (m > 0) {
+      state.balance = state.balance * Math.pow(1 + monthly, m);
+      state.lastAccruedISO = toISO;
+    }
+  };
+
+  for (const ev of events) {
+    accrueTo(ev.date);
+    if (ev.kind === "invest") {
+      state.balance += ev.amount;
+      state.principal += ev.amount;
+    } else {
+      const take = Math.min(ev.amount, state.balance);
+      state.balance -= take;
+      const reduceP = Math.min(state.principal, take);
+      state.principal -= reduceP;
+    }
+  }
+
+  const todayISO = today.toISOString().slice(0, 10);
+  accrueTo(todayISO);
+
+  return {
+    balance: Math.max(0, +state.balance.toFixed(2)),
+    principal: Math.max(0, +state.principal.toFixed(2)),
+    lastAccruedISO: todayISO,
+  };
+}
+
+
 
 function saveSettings(s) {
   try {
@@ -155,6 +226,23 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     }, 60 * 1000); // check monthly rollover roughly; cheap
     return () => clearInterval(tick);
   }, [invest.balance, invest.lastAccruedISO]);
+
+  // Whenever the master transactions list changes (e.g., deletions in Detailed),
+  // rebuild principal/current purely from transactions so there's no drift.
+  useEffect(() => {
+    const rebuilt = rebuildInvestFromTransactions(readInvestAPR(), txs, new Date());
+    // Only persist/state-update if something materially changed
+    const changed =
+      Math.abs(rebuilt.balance - invest.balance) > 0.005 ||
+      Math.abs(rebuilt.principal - invest.principal) > 0.005 ||
+      rebuilt.lastAccruedISO !== invest.lastAccruedISO;
+
+    if (changed) {
+      writeInvestState(rebuilt);
+      setInvest(rebuilt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txs]); // key: reacts to deletes/edits/adds in Detailed
 
 
   // ---- Inputs ----
