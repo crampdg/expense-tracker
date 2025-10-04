@@ -1,4 +1,4 @@
-// BudgetTab.jsx (replace entire file)
+// BudgetTab.jsx
 import { useMemo, useState, useEffect } from "react";
 import { calcPeriodEnd, getAnchoredPeriodStart } from "../utils/periodUtils";
 import Card from "./ui/Card.jsx";
@@ -259,7 +259,6 @@ export default function BudgetTab({
       }
     }
 
-
     if (toAdd.inflows.length || toAdd.outflows.length) {
       setBudgets((prev) => ({
         ...prev,
@@ -270,13 +269,41 @@ export default function BudgetTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startISO, endISO, txs]);
 
-  // -------------------- Collapse UI --------------------
-  const keyFor = (section, path) => `${section}:${path.join(".")}`;
-  const [collapsed, setCollapsed] = useState(new Set());
-  const isCollapsed = (section, path) => collapsed.has(keyFor(section, path));
-  const toggleCollapse = (section, path) =>
+  // -------------------- Collapse UI (now persisted) --------------------
+  const COLLAPSE_KEY = "bleh:budget:collapsed:v2";
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(COLLAPSE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed]);
+
+  // key by section + normalized NAME (stable across sessions)
+  const keyFor = (section, pathOrName) => {
+    const name =
+      Array.isArray(pathOrName)
+        ? getItemAtPath(section, pathOrName)?.category
+        : pathOrName;
+    return `${section}:${norm(name || "")}`;
+  };
+
+  const isCollapsed = (section, pathOrName) => collapsed.has(keyFor(section, pathOrName));
+  const toggleCollapse = (section, pathOrName) =>
     setCollapsed((s) => {
-      const k = keyFor(section, path);
+      const k = keyFor(section, pathOrName);
       const ns = new Set(s);
       ns.has(k) ? ns.delete(k) : ns.add(k);
       return ns;
@@ -564,13 +591,32 @@ export default function BudgetTab({
       const thisKey = keyFor(section, path);
       const isSub = depth === 1;
       const actual = actualForItem(section, item);
+      const budget = Number(item.amount || 0);
+
+      const titleCellClass = ["px-4 py-2", depth ? "pl-6 border-l-2 border-gray-200" : ""].join(" ");
+      let budgetCellClass = "px-4 py-2 text-right tabular-nums";
+      let actualCellClass = "px-4 py-2 text-right tabular-nums";
+
+      if (!isSub) {
+        budgetCellClass += " font-medium";
+        // color cues
+        if (section === "outflows") {
+          if (budget > 0 && actual > budget) actualCellClass += " text-rose-600 font-medium";
+          else if (budget > 0 && actual < budget) actualCellClass += " text-emerald-700 font-medium";
+          else actualCellClass += " font-medium";
+        } else {
+          if (budget > 0 && actual >= budget) actualCellClass += " text-emerald-700 font-medium";
+          else if (budget > 0 && actual < budget) actualCellClass += " text-amber-700 font-medium";
+          else actualCellClass += " font-medium";
+        }
+      }
 
       return (
         <>
           <tr
             key={thisKey}
             className={[
-              "border-t border-gray-100 relative",
+              "border-t border-gray-100 relative odd:bg-white even:bg-gray-50/40",
               depth === 0 && isCollapsed(section, path) ? "" : "hover:bg-gray-50",
             ].join(" ")}
             onClick={
@@ -578,7 +624,7 @@ export default function BudgetTab({
             }
             data-depth={depth}
           >
-            <td className="px-4 py-2" style={{ paddingLeft: depth ? 24 : 16 }}>
+            <td className={titleCellClass}>
               <div className="flex items-center gap-2">
                 {depth === 0 && item.children?.length ? (
                   <button
@@ -603,10 +649,10 @@ export default function BudgetTab({
                 </span>
               </div>
             </td>
-            <td className="px-4 py-2 text-right tabular-nums">
-              {isSub ? "" : money(Number(item.amount || 0))}
+            <td className={budgetCellClass}>
+              {isSub ? "" : money(budget)}
             </td>
-            <td className="px-4 py-2 text-right tabular-nums">{money(actual)}</td>
+            <td className={actualCellClass}>{money(actual)}</td>
           </tr>
 
           {!isCollapsed(section, path)
@@ -622,7 +668,7 @@ export default function BudgetTab({
     return (
       <div className="overflow-auto" style={editing ? { pointerEvents: "none" } : undefined}>
         <table className="w-full border-t border-gray-200 text-sm">
-          <thead className="bg-gray-50/50 sticky top-0 z-10">
+          <thead className="bg-white sticky top-0 z-10 border-b">
             <tr className="text-left text-gray-600">
               <th className="px-4 py-2 w-2/5">Title</th>
               <th className="px-4 py-2 text-right">Budget</th>
@@ -641,7 +687,7 @@ export default function BudgetTab({
             )}
           </tbody>
           <tfoot>
-            <tr className="border-t">
+            <tr className="border-t bg-gray-50/60">
               <td className="px-4 py-2 font-semibold">Total</td>
               <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(tableBudgetTotal)}</td>
               <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(tableActualTotal)}</td>
@@ -651,8 +697,6 @@ export default function BudgetTab({
       </div>
     );
   };
-
-
 
   // -------------------- UI --------------------
   return (
@@ -761,7 +805,6 @@ export default function BudgetTab({
         </div>
         <SectionTable section="inflows" rows={getArray("inflows")} baseRows={getArray("inflows")} />
 
-
         <div className="h-px bg-gray-200 my-1" />
 
         <div className="flex items-center justify-between px-4 py-3">
@@ -783,7 +826,6 @@ export default function BudgetTab({
           rows={getArray("outflows").filter((r) => (r.type || "variable") === "fixed")}
           baseRows={getArray("outflows")}
         />
-
 
         <div className="h-px bg-gray-200 my-1" />
 
@@ -807,7 +849,6 @@ export default function BudgetTab({
           baseRows={getArray("outflows")}
         />
 
-
         {/* NET */}
         <div className="px-4 py-3 text-sm border-t border-gray-100">
           <table className="w-full">
@@ -819,7 +860,7 @@ export default function BudgetTab({
               </tr>
             </thead>
             <tbody>
-              <tr>
+              <tr className="bg-gray-50/60">
                 <td className="py-2 font-semibold">Net</td>
                 <td className="py-2 text-right tabular-nums font-semibold">{money(netBudgeted)}</td>
                 <td
