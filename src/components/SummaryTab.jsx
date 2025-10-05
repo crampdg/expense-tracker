@@ -19,6 +19,22 @@ import { money } from "../utils/format.js"
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils"
 import Button from "./ui/Button.jsx"
 
+// --- NEW: robust date helpers so strings or Dates are both OK ---
+const toDate = (v) => {
+  if (v instanceof Date) return isNaN(v) ? null : v
+  if (typeof v === "string") {
+    // handle "YYYY-MM-DD" or ISO
+    const d = new Date(v.length <= 10 ? v + "T00:00:00" : v)
+    return isNaN(d) ? null : d
+  }
+  if (typeof v === "number") {
+    const d = new Date(v)
+    return isNaN(d) ? null : d
+  }
+  return null
+}
+const mustDate = (v, fallback = new Date()) => toDate(v) ?? fallback
+
 export default function SummaryTab({ transactions, budget, period, periodOffset, setPeriodOffset, setPeriod }) {
 
   const txs = Array.isArray(transactions) ? transactions : []
@@ -28,29 +44,35 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
 
   // Period from shared state (synced with Budget tab)
   const effectivePeriod = useMemo(() => {
-    if (period?.type && period?.anchorDate) return period;
-    return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) };
-  }, [period?.type, period?.anchorDate]);
-
+    if (period?.type && period?.anchorDate) return period
+    return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
+  }, [period?.type, period?.anchorDate])
 
   const effectiveOffset = typeof periodOffset === "number" ? periodOffset : 0
-  const offsetStart = useMemo(
-    () => getAnchoredPeriodStart(effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset),
-    [effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset]
-  )
 
-  const offsetEnd = useMemo(
-    () => calcPeriodEnd(effectivePeriod.type, offsetStart),
-    [effectivePeriod.type, offsetStart]
-  )
+  // --- CHANGED: normalize outputs to Dates, regardless of what utils return ---
+  const offsetStart = useMemo(() => {
+    const raw = getAnchoredPeriodStart(effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset)
+    return mustDate(raw)
+  }, [effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset])
 
-  const startISO = offsetStart.toISOString().slice(0, 10)
-  const endISO = offsetEnd.toISOString().slice(0, 10)
+  const offsetEnd = useMemo(() => {
+    const raw = calcPeriodEnd(effectivePeriod.type, offsetStart)
+    // if calcPeriodEnd returns string or Date, normalize; also never allow end < start
+    const d = mustDate(raw, offsetStart)
+    return d.getTime() < offsetStart.getTime() ? offsetStart : d
+  }, [effectivePeriod.type, offsetStart])
+
+  // If something still went wrong with dates, short-circuit to a safe UI
+  const datesOkay = offsetStart instanceof Date && offsetEnd instanceof Date && !isNaN(offsetStart) && !isNaN(offsetEnd)
+
+  const startISO = datesOkay ? offsetStart.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+  const endISO = datesOkay ? offsetEnd.toISOString().slice(0, 10) : startISO
   const filePrefix = `${startISO}_to_${endISO}`
 
   const dayMs = 24 * 60 * 60 * 1000
   const isCurrentPeriod = effectiveOffset === 0
-  const daysTotal = Math.round((offsetEnd - offsetStart) / dayMs) + 1
+  const daysTotal = Math.max(1, Math.round((offsetEnd - offsetStart) / dayMs) + 1)
   const today = new Date()
   const clampedToday = new Date(Math.min(today.getTime(), offsetEnd.getTime()))
   const daysElapsed = Math.max(1, Math.round((clampedToday - offsetStart) / dayMs) + 1)
@@ -84,49 +106,37 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
     [budget]
   )
 
-  // Projection: cap INFLOWS at remaining budget;
-  // and cap INVESTMENTS outflows at their budget (pace other outflows).
+  // Projection
   const projection = useMemo(() => {
-    if (!isCurrentPeriod) return null;
+    if (!isCurrentPeriod) return null
 
-    // Pace to-date
-    const dailyInflow = inflowsTotal / Math.max(1, daysElapsed);
+    const dailyInflow = inflowsTotal / Math.max(1, daysElapsed)
 
-    // ---------------- Inflows (unchanged): cap at remaining budget if exists ----------------
-    const hasInflowBudget = plannedInflows > 0;
-    const remainingBudgetedInflows = Math.max(0, plannedInflows - inflowsTotal);
-    const projectedInflowsRemaining = hasInflowBudget
-      ? remainingBudgetedInflows
-      : dailyInflow * daysRemaining;
+    const hasInflowBudget = plannedInflows > 0
+    const remainingBudgetedInflows = Math.max(0, plannedInflows - inflowsTotal)
+    const projectedInflowsRemaining = hasInflowBudget ? remainingBudgetedInflows : dailyInflow * daysRemaining
 
-    // ---------------- Outflows: split Investments vs non-Investments ----------------
-    const investCatName = "investments";
+    const investCatName = "investments"
 
-    // Budgeted Investments outflow for the period
     const plannedInvestOutflow = (budget?.outflows || []).reduce((s, r) => {
-      const cat = (r.category || "").toLowerCase().trim();
-      return s + (cat === investCatName ? (Number(r.amount) || 0) : 0);
-    }, 0);
+      const cat = (r.category || "").toLowerCase().trim()
+      return s + (cat === investCatName ? (Number(r.amount) || 0) : 0)
+    }, 0)
 
-    // Actual Investments outflow to date
     const investSpentToDate = periodTxs.reduce((s, t) => {
-      if (t.type !== "expense") return s;
-      const cat = (t.category || "").toLowerCase().trim();
-      return s + (cat === investCatName ? (Number(t.amount) || 0) : 0);
-    }, 0);
+      if (t.type !== "expense") return s
+      const cat = (t.category || "").toLowerCase().trim()
+      return s + (cat === investCatName ? (Number(t.amount) || 0) : 0)
+    }, 0)
 
-    // Remaining budget for Investments (do NOT pace beyond this)
-    const remainingBudgetedInvestOut = Math.max(0, plannedInvestOutflow - investSpentToDate);
+    const remainingBudgetedInvestOut = Math.max(0, plannedInvestOutflow - investSpentToDate)
 
-    // Non-investment outflows to date (these will be paced)
-    const outflowsNonInvestToDate = outflowsTotal - investSpentToDate;
-    const dailyOutflowNonInvest = outflowsNonInvestToDate / Math.max(1, daysElapsed);
-    const projectedNonInvestOutRemaining = dailyOutflowNonInvest * daysRemaining;
+    const outflowsNonInvestToDate = outflowsTotal - investSpentToDate
+    const dailyOutflowNonInvest = outflowsNonInvestToDate / Math.max(1, daysElapsed)
+    const projectedNonInvestOutRemaining = dailyOutflowNonInvest * daysRemaining
 
-    // Total projected outflows remaining = non-invest pace + capped investments
-    const projectedOutflowsRemaining = projectedNonInvestOutRemaining + remainingBudgetedInvestOut;
-
-    const projectedNetEnd = net + projectedInflowsRemaining - projectedOutflowsRemaining;
+    const projectedOutflowsRemaining = projectedNonInvestOutRemaining + remainingBudgetedInvestOut
+    const projectedNetEnd = net + projectedInflowsRemaining - projectedOutflowsRemaining
 
     return {
       projectedNetEnd,
@@ -138,7 +148,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
         inflows: hasInflowBudget && inflowsTotal >= plannedInflows,
         investments: plannedInvestOutflow > 0 && investSpentToDate >= plannedInvestOutflow,
       },
-    };
+    }
   }, [
     isCurrentPeriod,
     inflowsTotal,
@@ -151,8 +161,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
     periodTxs,
   ])
 
-
-  // Top spending categories (distinct insight)
+  // Top spending categories
   const outflowByCategory = useMemo(() => {
     const m = {}
     for (const t of periodTxs) {
@@ -173,8 +182,13 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
 
   // Cashflow timeline (cumulative net)
   const cashflowSeries = useMemo(() => {
+    // guard against nonsense date ranges
+    const start = offsetStart
+    const end = offsetEnd
+    if (!(start instanceof Date) || !(end instanceof Date) || isNaN(start) || isNaN(end)) return []
+
     const daily = new Map()
-    for (let t = new Date(offsetStart); t <= offsetEnd; t = new Date(t.getTime() + dayMs)) {
+    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + dayMs)) {
       daily.set(t.toISOString().slice(0, 10), 0)
     }
     for (const tx of periodTxs) {
@@ -185,7 +199,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
     }
     let running = 0
     const series = []
-    for (let t = new Date(offsetStart); t <= offsetEnd; t = new Date(t.getTime() + dayMs)) {
+    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + dayMs)) {
       const d = t.toISOString().slice(0, 10)
       running += daily.get(d) || 0
       series.push({ date: d, cum: running })
@@ -207,7 +221,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-tight">{effectivePeriod.type} Summary</h2>
             <div className="text-[11px] md:text-xs text-gray-600">
-              {offsetStart.toDateString()} – {offsetEnd.toDateString()}
+              {datesOkay ? `${offsetStart.toDateString()} – ${offsetEnd.toDateString()}` : "Invalid dates"}
             </div>
           </div>
 
@@ -263,7 +277,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
         </div>
       </Card>
 
-
       {/* Stat strip */}
       <div className="grid grid-cols-3 gap-2">
         <Card>
@@ -286,7 +299,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
         </Card>
       </div>
 
-      {/* Cashflow Timeline (unique insight) */}
+      {/* Cashflow Timeline */}
       <Card>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Cashflow Timeline</h3>
@@ -304,7 +317,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
             </AreaChart>
           </ResponsiveContainer>
         </div>
-
       </Card>
 
       {/* Top Spending Categories */}
@@ -328,7 +340,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
               </BarChart>
             </ResponsiveContainer>
           </div>
-
         </Card>
       )}
 
