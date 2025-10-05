@@ -18,7 +18,8 @@ input, select, textarea, button {
 }
 
 /* Safer taps: hint the browser no double-tap zoom needed on clickables */
-button, [role="button"], a, .btn, .tap-safe {
+button, [role="button"], a, .btn, .tap-safe, [data-noswipe] {
+
   touch-action: manipulation;
 }
 

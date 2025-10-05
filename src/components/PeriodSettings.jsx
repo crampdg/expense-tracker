@@ -9,7 +9,7 @@ export default function PeriodSettings({ periodConfig, setPeriodConfig }) {
   }
 
   return (
-    <div className="p-4 border rounded-md bg-white shadow-md space-y-3 tap-safe">
+    <div className="p-4 border rounded-md bg-white shadow-md space-y-3 tap-safe" data-noswipe>
       <h3 className="font-semibold">Budget Period Settings</h3>
 
       <label className="block">

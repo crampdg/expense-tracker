@@ -242,7 +242,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
         </div>
 
         {/* Period arrows */}
-        <div className="mt-2 flex items-center gap-1">
+        <div data-noswipe className="mt-2 flex items-center gap-1">
           <Button
             type="button"
             variant="ghost"
