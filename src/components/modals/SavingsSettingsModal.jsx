@@ -53,13 +53,19 @@ async function copyToClipboard(text) {
 
 export default function SavingsSettingsModal({ open, onClose, value, onSave, onAfterImport }) {
   // New settings model (auto-save on inflow)
-  // value = { autoSavePercent, autoSaveFixed, savingsLabel }
+  // value = { autoSavePercent, autoSaveFixed, savingsLabel, investAPR }
   const [form, setForm] = useState(value || {});
   const [showPaste, setShowPaste] = useState(false);
   const pasteRef = useRef(null);
   const fileRef = useRef(null);
 
-  useEffect(() => { setForm(value || {}); }, [value, open]);
+  // Danger Zone state
+  const [wipeText, setWipeText] = useState("");
+
+  useEffect(() => { 
+    setForm(value || {}); 
+    setWipeText("");
+  }, [value, open]);
 
   const setNum = (k, v) => setForm((f) => ({ ...f, [k]: num0(v) }));
   const setPct = (k, v) => setForm((f) => ({ ...f, [k]: clamp01(v) }));
@@ -106,6 +112,22 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
     } catch (e) { alert("Import failed: " + (e?.message || "Invalid JSON")); }
   };
 
+  // --- Danger Zone: wipe transactions only
+  const canWipe = wipeText.trim() === "REMOVE ALL";
+  const handleWipeTransactions = () => {
+    // Extra belt-and-suspenders confirmation
+    if (!canWipe) return;
+    try {
+      lsSetJSON("transactions", []);
+      // If you track any derived caches from transactions, clear them here as well.
+      // e.g., localStorage.removeItem("txCache");
+      alert("All transaction history has been removed.");
+      setTimeout(() => window.location.reload(), 200);
+    } catch (e) {
+      alert("Failed to remove transactions. " + (e?.message || ""));
+    }
+  };
+
   return (
     <Modal
       open={open}
@@ -115,10 +137,9 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
       <div className="p-4 md:p-5 tap-safe">
         <h3 className="text-lg font-semibold">Investments Settings</h3>
 
-          <p className="mt-1 text-sm text-gray-600">
-            When you add an inflow, the app will automatically add a matching outflow to your Savings category.
-          </p>
-
+        <p className="mt-1 text-sm text-gray-600">
+          When you add an inflow, the app will automatically add a matching outflow to your Savings category.
+        </p>
 
         <div className="mt-4 space-y-4">
           <div className="flex items-center justify-between gap-3">
@@ -133,7 +154,6 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
               className="input !py-1 !text-sm w-28 text-right"
             />
           </div>
-
 
           <div className="mt-2 flex items-center justify-end gap-2">
             <button className="px-3 py-1.5 rounded-md text-sm border border-gray-300 bg-white hover:bg-gray-50" onClick={onClose}>Close</button>
@@ -164,6 +184,37 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
               </div>
             </div>
           )}
+        </div>
+
+        {/* Danger Zone */}
+        <div className="mt-8 border-t pt-6">
+          <h4 className="text-sm font-semibold text-red-700">Danger Zone</h4>
+          <p className="mt-1 text-xs text-red-600">
+            This will permanently remove ALL transaction history. Budgets and settings are not affected.
+          </p>
+
+          <label className="mt-3 block text-sm text-gray-700">
+            Type <span className="font-mono font-semibold">REMOVE ALL</span> to enable:
+          </label>
+          <input
+            value={wipeText}
+            onChange={(e) => setWipeText(e.target.value)}
+            placeholder="REMOVE ALL"
+            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            aria-label="Type REMOVE ALL to confirm"
+          />
+
+          <div className="mt-3 flex items-center justify-end">
+            <button
+              disabled={!canWipe}
+              onClick={handleWipeTransactions}
+              className={`px-3 py-2 rounded-md text-sm ${
+                canWipe ? "bg-red-600 text-white hover:bg-red-500" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+              }`}
+            >
+              Reset Transactions
+            </button>
+          </div>
         </div>
       </div>
     </Modal>
