@@ -121,8 +121,10 @@ export default function BudgetTab({
       return getAnchoredPeriodStart(
         safePeriod.type,
         safePeriod.anchorDate,
+        new Date(),
         periodOffset
       );
+
     } catch {
       const d = new Date(safePeriod.anchorDate || todayISO);
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -742,21 +744,25 @@ export default function BudgetTab({
         </div>
 
         {/* Period controls */}
-        <div className="mt-2 flex items-center gap-2">
+        <div data-noswipe className="mt-2 flex items-center gap-2">
+
           <Button
             type="button"
             variant="ghost"
             className="!px-2 rounded-md hover:bg-slate-100"
             onClick={() => setPeriodOffset((o) => o - 1)}
+            onPointerUp={(e) => { if (e.pointerType !== "mouse") setPeriodOffset((o) => o - 1); }}
             title="Previous"
           >
             ←
           </Button>
+
           <Button
             type="button"
             variant="ghost"
             className="!px-2 rounded-md hover:bg-slate-100"
             onClick={() => setPeriodOffset((o) => o + 1)}
+            onPointerUp={(e) => { if (e.pointerType !== "mouse") setPeriodOffset((o) => o + 1); }}
             title="Next"
           >
             → 
@@ -792,7 +798,7 @@ export default function BudgetTab({
         <SectionTable section="inflows" rows={getArray("inflows")} baseRows={getArray("inflows")} />
 
         {/* Fixed outflows header */}
-        <div className="mt-2 flex items-center justify-between px-4 py-2 bg-emerald-50/70 border-y border-emerald-100">
+        <div data-noswipe className="mt-2 flex items-center justify-between px-4 py-2 bg-emerald-50/70 border-y border-emerald-100">
           <h3 className="font-medium text-emerald-900">Fixed Outflows</h3>
           <Button
             type="button"

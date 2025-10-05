@@ -28,22 +28,17 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
 
   // Period from shared state (synced with Budget tab)
   const effectivePeriod = useMemo(() => {
-    if (period?.type && period?.anchorDate) return period
-    try {
-      const saved = localStorage.getItem("periodConfig")
-      if (saved) {
-        const p = JSON.parse(saved)
-        if (p?.type && p?.anchorDate) return p
-      }
-    } catch {}
-    return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
-  }, [period?.type, period?.anchorDate])
+    if (period?.type && period?.anchorDate) return period;
+    return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) };
+  }, [period?.type, period?.anchorDate]);
+
 
   const effectiveOffset = typeof periodOffset === "number" ? periodOffset : 0
   const offsetStart = useMemo(
-    () => getAnchoredPeriodStart(effectivePeriod.type, effectivePeriod.anchorDate, new Date(), effectiveOffset),
+    () => getAnchoredPeriodStart(effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset),
     [effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset]
   )
+
   const offsetEnd = useMemo(
     () => calcPeriodEnd(effectivePeriod.type, offsetStart),
     [effectivePeriod.type, offsetStart]
@@ -248,6 +243,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
             variant="ghost"
             className="!px-2 !py-1 text-sm"
             onClick={() => canAdjustPeriod && setPeriodOffset((o) => o - 1)}
+            onPointerUp={(e) => { if (e.pointerType !== "mouse" && canAdjustPeriod) setPeriodOffset((o) => o - 1); }}
             disabled={!canAdjustPeriod}
             title="Previous"
           >
@@ -258,6 +254,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
             variant="ghost"
             className="!px-2 !py-1 text-sm"
             onClick={() => canAdjustPeriod && setPeriodOffset((o) => o + 1)}
+            onPointerUp={(e) => { if (e.pointerType !== "mouse" && canAdjustPeriod) setPeriodOffset((o) => o + 1); }}
             disabled={!canAdjustPeriod}
             title="Next"
           >

@@ -23,9 +23,9 @@ export default function PeriodSettings({ periodConfig, setPeriodConfig }) {
           <option value="Biweekly">Biweekly</option>
           <option value="SemiMonthly">Semi-Monthly</option>
           <option value="Monthly">Monthly</option>
-          <option value="Annual">Annual</option>
-          <option value="Custom">Custom</option>
+          <option value="Annually">Annual</option>
         </select>
+
       </label>
 
       <label className="block">

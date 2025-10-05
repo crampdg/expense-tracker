@@ -301,8 +301,10 @@ function App() {
             // Pass the SAME period + offset used by BudgetTab so both tabs stay in sync
             period={periodConfig}
             periodOffset={periodOffset}
+            setPeriodOffset={setPeriodOffset}
           />
         )}
+
 
         {activeTab === 'savings' && (
           <SavingsTab

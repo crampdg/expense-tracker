@@ -27,6 +27,7 @@ export default function SwipeTabs({
         "[data-noswipe],button,[role='button'],a,input,select,textarea,[contenteditable='true']"
       );
 
+
     const idx = () => Math.max(0, tabs.indexOf(active));
 
     const onTouchStart = (e) => {
