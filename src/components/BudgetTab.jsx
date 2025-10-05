@@ -750,23 +750,35 @@ export default function BudgetTab({
             type="button"
             variant="ghost"
             className="!px-2 rounded-md hover:bg-slate-100"
-            onClick={() => setPeriodOffset((o) => o - 1)}
-            onPointerUp={(e) => { if (e.pointerType !== "mouse") setPeriodOffset((o) => o - 1); }}
+            onPointerUp={() => setPeriodOffset((o) => o - 1)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setPeriodOffset((o) => o - 1);
+              }
+            }}
             title="Previous"
           >
             ←
           </Button>
 
+
           <Button
             type="button"
             variant="ghost"
             className="!px-2 rounded-md hover:bg-slate-100"
-            onClick={() => setPeriodOffset((o) => o + 1)}
-            onPointerUp={(e) => { if (e.pointerType !== "mouse") setPeriodOffset((o) => o + 1); }}
+            onPointerUp={() => setPeriodOffset((o) => o + 1)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setPeriodOffset((o) => o + 1);
+              }
+            }}
             title="Next"
           >
-            → 
+            →
           </Button>
+
           <button
             type="button"
             onClick={() => setPeriodOpen(true)}

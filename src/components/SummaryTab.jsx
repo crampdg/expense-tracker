@@ -43,18 +43,35 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
   const canAdjustPeriod = typeof setPeriodOffset === "function"
 
   // Period from shared state (synced with Budget tab)
+  // Valid types + mapping from UI labels
+  const VALID_TYPES = new Set(["Monthly", "Biweekly", "Weekly", "SemiMonthly", "Annually"]);
+  const normalizeType = (t) => {
+    const map = { "Semi-Monthly": "SemiMonthly", Annual: "Annually" };
+    const candidate = map[t] || t;
+    return VALID_TYPES.has(candidate) ? candidate : "Monthly";
+  };
+
   const effectivePeriod = useMemo(() => {
-    if (period?.type && period?.anchorDate) return period
-    return { type: "Monthly", anchorDate: new Date().toISOString().slice(0, 10) }
-  }, [period?.type, period?.anchorDate])
+    const type = normalizeType(period?.type);
+    const anchor = period?.anchorDate || new Date().toISOString().slice(0, 10);
+    return { type, anchorDate: anchor };
+  }, [period?.type, period?.anchorDate]);
 
-  const effectiveOffset = typeof periodOffset === "number" ? periodOffset : 0
+  const effectiveOffset = typeof periodOffset === "number" ? periodOffset : 0;
 
-  // --- CHANGED: normalize outputs to Dates, regardless of what utils return ---
   const offsetStart = useMemo(() => {
-    const raw = getAnchoredPeriodStart(effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset)
-    return mustDate(raw)
-  }, [effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset])
+    try {
+      const raw = getAnchoredPeriodStart(
+        effectivePeriod.type,
+        effectivePeriod.anchorDate,
+        new Date(),
+        effectiveOffset
+      );
+      return mustDate(raw);
+    } catch {
+      return mustDate(effectivePeriod.anchorDate);
+    }
+  }, [effectivePeriod.type, effectivePeriod.anchorDate, effectiveOffset]);
 
   const offsetEnd = useMemo(() => {
     const raw = calcPeriodEnd(effectivePeriod.type, offsetStart)
@@ -256,24 +273,36 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
             type="button"
             variant="ghost"
             className="!px-2 !py-1 text-sm"
-            onClick={() => canAdjustPeriod && setPeriodOffset((o) => o - 1)}
-            onPointerUp={(e) => { if (e.pointerType !== "mouse" && canAdjustPeriod) setPeriodOffset((o) => o - 1); }}
+            onPointerUp={() => canAdjustPeriod && setPeriodOffset((o) => o - 1)}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && canAdjustPeriod) {
+                e.preventDefault();
+                setPeriodOffset((o) => o - 1);
+              }
+            }}
             disabled={!canAdjustPeriod}
             title="Previous"
           >
             ←
           </Button>
+
           <Button
             type="button"
             variant="ghost"
             className="!px-2 !py-1 text-sm"
-            onClick={() => canAdjustPeriod && setPeriodOffset((o) => o + 1)}
-            onPointerUp={(e) => { if (e.pointerType !== "mouse" && canAdjustPeriod) setPeriodOffset((o) => o + 1); }}
+            onPointerUp={() => canAdjustPeriod && setPeriodOffset((o) => o + 1)}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && canAdjustPeriod) {
+                e.preventDefault();
+                setPeriodOffset((o) => o + 1);
+              }
+            }}
             disabled={!canAdjustPeriod}
             title="Next"
           >
             →
           </Button>
+
         </div>
       </Card>
 
