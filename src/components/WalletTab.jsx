@@ -18,13 +18,12 @@ function readSettings() {
 
 // ===== Investments storage keys =====
 const INVEST_KEYS = {
-  APR: "investAPR",                  // annual rate as decimal (0.04 = 4%)
-  BAL: "investBalance",              // current compounded balance
-  PRINC: "investPrincipal",          // net principal currently invested
-  LAST: "investLastAccruedISO",      // last monthly accrual date (ISO)
+  APR: "investAPR",
+  BAL: "investBalance",
+  PRINC: "investPrincipal",
+  LAST: "investLastAccruedISO",
 };
 
-// Read APR from storage (default 4%)
 function readInvestAPR() {
   try { const v = Number(localStorage.getItem(INVEST_KEYS.APR)); return Number.isFinite(v) ? Math.max(0, v) : 0.04; } catch { return 0.04; }
 }
@@ -46,7 +45,6 @@ function writeInvestState({ balance, principal, lastAccruedISO }) {
   } catch {}
 }
 
-// Whole-month difference: if day-of-month hasn’t reached yet, subtract 1
 function monthsBetween(fromISO, toISO) {
   if (!fromISO) return 0;
   const a = new Date(fromISO), b = new Date(toISO);
@@ -55,13 +53,12 @@ function monthsBetween(fromISO, toISO) {
   return Math.max(0, m);
 }
 
-// Apply monthly compounding for all full months since last accrual
 function accrueInvestMonthly(state, today = new Date()) {
   const toISO = today.toISOString().slice(0, 10);
   const months = monthsBetween(state.lastAccruedISO || toISO, toISO);
   if (months <= 0) return state;
 
-  const apr = readInvestAPR();                     // use latest saved APR
+  const apr = readInvestAPR();
   const monthly = apr / 12;
   const factor = Math.pow(1 + monthly, months);
   const newBal = (Number(state.balance) || 0) * factor;
@@ -71,7 +68,6 @@ function accrueInvestMonthly(state, today = new Date()) {
   return updated;
 }
 
-// ---- Rebuild Investments from transactions (single source of truth) ----
 function listInvestEventsFromTxs(transactions = []) {
   const events = [];
   for (const t of transactions) {
@@ -85,13 +81,12 @@ function listInvestEventsFromTxs(transactions = []) {
 
     if (!isInvest) continue;
 
-    // Prefer explicit meta action; otherwise infer from type
     const action = (meta.action || "").toLowerCase();
     let kind = null; // 'invest' | 'withdraw'
     if (action === "invest") kind = "invest";
     else if (action === "withdraw") kind = "withdraw";
-    else if (t.type === "expense") kind = "invest";      // expense to Investments = invest
-    else if (t.type === "inflow") kind = "withdraw";     // inflow from Investments = withdraw
+    else if (t.type === "expense") kind = "invest";
+    else if (t.type === "inflow") kind = "withdraw";
 
     if (!kind) continue;
     events.push({ date: t.date, amount: amt, kind });
@@ -174,7 +169,7 @@ function currency(n) {
 const amtClass = (n) => n < 0 ? "text-red-600" : n > 0 ? "text-emerald-700" : "text-gray-700";
 
 /* ---------- compute reserved for this period ---------- */
-function periodSpan(start, end){ // inclusive days
+function periodSpan(start, end){
   const d0 = new Date(start), d1 = new Date(end);
   const ms = 24*60*60*1000;
   return Math.max(1, Math.round((Date.UTC(d1.getFullYear(),d1.getMonth(),d1.getDate()) - Date.UTC(d0.getFullYear(),d0.getMonth(),d0.getDate()))/ms) + 1);
@@ -190,18 +185,29 @@ function daysSoFar(start, end, today=new Date()){
   return Math.round((t - a)/ms) + 1;
 }
 
+/* ---------- variable/outflow helpers (robust to different shapes) ---------- */
+const isTopLevel = (o) => !(o?.parentId || o?.parent || o?.parentCategory || o?.parentKey);
+const normCat = (s) => (s || "").trim();
+const pickBudgeted = (o) => Number(o?.amount ?? o?.budget ?? o?.budgeted ?? 0) || 0;
+const isVariableOutflow = (o) => {
+  const type = (o?.type || o?.kind || "").toString().toLowerCase();
+  if (typeof o?.isVariable === "boolean") return o.isVariable;
+  if (typeof o?.fixed === "boolean") return !o.fixed;
+  if (type) return type !== "fixed";
+  // Fallback: treat as variable if unknown (safer for warnings)
+  return true;
+};
+
 export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const [showMoneyTime, setShowMoneyTime] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState(readSettings());
-  // Investments local state
   const [invest, setInvest] = useState(() => accrueInvestMonthly(readInvestState()));
 
-  // UI: collapse/expand Investments
   const [isInvestOpen, setIsInvestOpen] = useState(() => {
     try {
       const v = localStorage.getItem("investIsOpen");
-      return v ? v === "true" : false; // collapsed by default
+      return v ? v === "true" : false;
     } catch {
       return false;
     }
@@ -210,7 +216,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     try { localStorage.setItem("investIsOpen", String(isInvestOpen)); } catch {}
   }, [isInvestOpen]);
 
-  // ---- Inputs (MOVED ABOVE EFFECTS THAT DEPEND ON txs) ----
   const txs = Array.isArray(transactions) ? transactions : [];
   const inflowCats = (budget?.inflows || []).map((i) => i.category);
   const outflowCats = (budget?.outflows || []).map((o) => o.category);
@@ -219,19 +224,15 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   useEffect(() => {
     const tick = setInterval(() => {
       const updated = accrueInvestMonthly(readInvestState(), new Date());
-      // Only set state if something changed materially (avoid extra renders)
       if (Math.abs(updated.balance - invest.balance) > 0.005 || updated.lastAccruedISO !== invest.lastAccruedISO) {
         setInvest(updated);
       }
-    }, 60 * 1000); // check monthly rollover roughly; cheap
+    }, 60 * 1000);
     return () => clearInterval(tick);
   }, [invest.balance, invest.lastAccruedISO]);
 
-  // Whenever the master transactions list changes (e.g., deletions in Detailed),
-  // rebuild principal/current purely from transactions so there's no drift.
   useEffect(() => {
     const rebuilt = rebuildInvestFromTransactions(readInvestAPR(), txs, new Date());
-    // Only persist/state-update if something materially changed
     const changed =
       Math.abs(rebuilt.balance - invest.balance) > 0.005 ||
       Math.abs(rebuilt.principal - invest.principal) > 0.005 ||
@@ -242,10 +243,10 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       setInvest(rebuilt);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [txs]); // key: reacts to deletes/edits/adds in Detailed
+  }, [txs]);
 
   // ---- Period window ----
-  const { startISO, endISO, daysLeft } = useMemo(() => {
+  const { startISO, endISO, daysLeft, periodDays, daysPassed } = useMemo(() => {
     let type = "Monthly";
     let anchor = new Date().toISOString().slice(0, 10);
     try {
@@ -259,7 +260,15 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     const end = calcPeriodEnd(type, start);
     const dayMs = 24 * 60 * 60 * 1000;
     const left = Math.max(1, Math.ceil((end - new Date()) / dayMs));
-    return { startISO: start.toISOString().slice(0, 10), endISO: end.toISOString().slice(0, 10), daysLeft: left };
+    const pDays = periodSpan(start.toISOString().slice(0,10), end.toISOString().slice(0,10));
+    const dPassed = daysSoFar(start.toISOString().slice(0,10), end.toISOString().slice(0,10));
+    return {
+      startISO: start.toISOString().slice(0, 10),
+      endISO: end.toISOString().slice(0, 10),
+      daysLeft: left,
+      periodDays: pDays,
+      daysPassed: dPassed
+    };
   }, []);
 
   // ---- Cash on Hand ----
@@ -291,29 +300,21 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     if (!onAddTransaction) return;
 
     const tx = { ...t };
-
-    // Normalize type robustly: force inflow when amount > 0 (even if UI said "expense")
     const rawType = (tx.type || "").toString().toLowerCase();
     const amtNum = Number(tx.amount);
 
-    // Respect the UI selection when it’s valid.
-    // Only infer when the type is unknown.
     if (rawType === "inflow" || rawType === "income") {
       tx.type = "inflow";
     } else if (rawType === "expense" || rawType === "outflow") {
       tx.type = "expense";
     } else {
-      // Fallback inference by sign (optional)
       tx.type = Number.isFinite(amtNum) && amtNum < 0 ? "expense" : "inflow";
     }
 
-    // Ensure TX has an id so paired record can reference it even if the store doesn't return one
     if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // 1) Commit the original transaction first
     const committedId = onAddTransaction(tx) ?? tx.id;
 
-    // 2) If this is an inflow, compute and add the Savings outflow on next tick
     if (tx.type === "inflow") {
       const pct = Math.max(0, Math.min(1, Number(settings.autoSavePercent)));
       const fixed = Math.max(0, Number(settings.autoSaveFixed));
@@ -361,10 +362,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   const projectedEndCash = cashOnHand + remainingPlannedInflows - remainingPlannedOutflows;
 
   // ---- Savings (new accrual model) ----
-  const periodDays = periodSpan(startISO, endISO);
-  const accruedDays = daysSoFar(startISO, endISO);
   const periodReserveTotal = (settings.reserveDaily || 0) * periodDays;
-  const savingsReserved = settings.reserveOnMonthStart ? periodReserveTotal : (settings.reserveDaily || 0) * accruedDays;
+  const savingsReserved = settings.reserveOnMonthStart ? periodReserveTotal : (settings.reserveDaily || 0) * daysPassed;
 
   // ---- Suggested Daily ----
   const hasAnyBudget = ((budget?.inflows?.length || 0) + (budget?.outflows?.length || 0)) > 0;
@@ -376,8 +375,90 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     return Math.max(0, buffered);
   }, [cashOnHand, daysLeft, hasAnyBudget, projectedEndCash, settings.suggestedDailyBufferPct]);
 
-  // ---- Recent list ----
-  const recentTransactions = useMemo(() => [...txs].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,3), [txs]);
+  /* =========================
+     VARIABLE SPEND WARNINGS
+     ========================= */
+  const variableBudgetTopLevel = useMemo(() => {
+    const out = new Map(); // key: normalized category -> { category, budgeted }
+    (budget?.outflows || []).forEach((o) => {
+      if (!o) return;
+      if (!isTopLevel(o)) return;
+      if (!isVariableOutflow(o)) return;
+      const cat = normCat(o.category);
+      if (!cat) return;
+      const amt = pickBudgeted(o);
+      const prev = out.get(cat);
+      out.set(cat, { category: cat, budgeted: (prev?.budgeted || 0) + amt });
+    });
+    return out;
+  }, [budget]);
+
+  const spendByCategoryThisPeriod = useMemo(() => {
+    const m = new Map();
+    for (const t of txs) {
+      if (!t || t.type !== "expense") continue;
+      const d = t.date || "";
+      if (!(d >= startISO && d <= endISO)) continue;
+      const cat = normCat(t.category);
+      if (!cat) continue;
+      const amt = Math.max(0, Number(t.amount) || 0);
+      m.set(cat, (m.get(cat) || 0) + amt);
+    }
+    return m;
+  }, [txs, startISO, endISO]);
+
+  const warnings = useMemo(() => {
+    const arr = [];
+    if (daysPassed <= 0) return arr; // before period starts, nothing to project
+
+    for (const { category, budgeted } of variableBudgetTopLevel.values()) {
+      const spent = spendByCategoryThisPeriod.get(category) || 0;
+      const allowedDaily = budgeted / Math.max(1, periodDays);
+
+      // Budget of 0 means any spend risks overshoot
+      if (budgeted <= 0 && spent > 0) {
+        arr.push({
+          category,
+          budgeted,
+          spent,
+          projected: Infinity,
+          overBy: spent,
+          canRecover: false,
+          waitDays: null,
+        });
+        continue;
+      }
+
+      // Current pace projection
+      const dailyRate = spent / Math.max(1, daysPassed);
+      const projected = dailyRate * periodDays;
+
+      if (projected > budgeted + 0.005) {
+        // How many zero-spend "cooldown" days to bring cumulative average down to allowed?
+        // Solve w >= spent/allowedDaily - daysPassed
+        let wait = Math.ceil(Math.max(0, spent / Math.max(1e-9, allowedDaily) - daysPassed));
+        const remainingDays = Math.max(0, periodDays - daysPassed);
+        const canRecover = wait <= remainingDays;
+
+        // If math says 0 but projection says over, force at least 1 day
+        if (wait === 0) wait = 1;
+
+        arr.push({
+          category,
+          budgeted,
+          spent,
+          projected,
+          overBy: projected - budgeted,
+          canRecover,
+          waitDays: canRecover ? wait : null,
+        });
+      }
+    }
+
+    // Sort most urgent first (largest projected overage)
+    arr.sort((a, b) => (b.overBy || 0) - (a.overBy || 0));
+    return arr;
+  }, [variableBudgetTopLevel, spendByCategoryThisPeriod, daysPassed, periodDays]);
 
   // ---- UI handlers ----
   const openSettings = () => setShowSettings(true);
@@ -391,7 +472,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }
 
   function investNow() {
-    // Accrue interest first so we add on top of up-to-date balance
     const state = accrueInvestMonthly(readInvestState(), new Date());
     const amt = promptNumber("Amount to INVEST:");
     if (amt === null) return;
@@ -406,7 +486,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     writeInvestState(after);
     setInvest(after);
 
-    // Record an expense transaction to Investments
     onAddTransaction?.({
       date: todayISO,
       type: "expense",
@@ -427,15 +506,12 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
     const todayISO = new Date().toISOString().slice(0, 10);
     const newBal = state.balance - take;
-
-    // Reduce principal first; remainder comes from earnings
     const newPrincipal = Math.max(0, state.principal - take);
 
     const after = { ...state, balance: newBal, principal: newPrincipal, lastAccruedISO: todayISO };
     writeInvestState(after);
     setInvest(after);
 
-    // Record an inflow transaction from Investments
     onAddTransaction?.({
       date: todayISO,
       type: "inflow",
@@ -467,7 +543,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
           {/* INVESTMENTS MOVED TO SAVINGS TAB */}
           {false && (
           <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
-            {/* Header row: label + chevron (APR shows only when open) */}
             <button
               type="button"
               onClick={() => setIsInvestOpen((v) => !v)}
@@ -486,7 +561,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
               </div>
             </button>
 
-            {/* Collapsible panel */}
             <div id="investments-panel" className={isInvestOpen ? "mt-2 space-y-3" : "hidden"}>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
@@ -503,7 +577,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                 </div>
               </div>
 
-              {/* 20-year forecast */}
               <div className="text-xs text-emerald-900/80">
                 In 20 years (forecast):{" "}
                 <span className="font-semibold text-emerald-900">
@@ -511,7 +584,6 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                 </span>
               </div>
 
-              {/* Actions */}
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -531,7 +603,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
             </div>
           </div>
           )}
-          
+
           {/* Cash on Hand */}
           <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
           <div className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${cashOnHand < 0 ? "text-red-700" : "text-emerald-900"}`} aria-live="polite">
@@ -562,36 +634,44 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         </div>
       </div>
 
-      {/* Recent */}
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+      {/* ==== Variable Spend Warnings (replaces Recent Transactions) ==== */}
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/70 shadow-sm">
         <div className="px-4 py-3 flex items-center justify-between">
-          <div className="text-sm font-semibold text-gray-800">Recent Transactions</div>
-          <div className="text-xs text-gray-500">Period: {startISO} → {endISO}</div>
+          <div className="text-sm font-semibold text-amber-900">Variable Spend Warnings</div>
+          <div className="text-xs text-amber-800/90">Period: {startISO} → {endISO}</div>
         </div>
-        {recentTransactions.length > 0 ? (
-          <ul className="divide-y divide-gray-200">
-            {recentTransactions.map((t, idx) => {
-              const amt = Number(t.amount) || 0;
-              const isExpense = t.type === "expense";
-              return (
-                <li key={t.id ?? `${t.category}-${t.date}-${idx}`} className="px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex items-center gap-2">
-                      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full border text-xs ${isExpense ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`} aria-hidden="true">
-                        {isExpense ? "–" : "+"}
-                      </span>
-                      <span className="truncate text-sm font-medium">{t.category || "Uncategorized"}</span>
-                    </div>
-                    <div className={`text-sm font-semibold tabular-nums ${isExpense ? "text-red-600" : "text-emerald-700"}`}>
-                      {isExpense ? "-" : "+"}{currency(amt)}
+
+        {daysPassed <= 0 ? (
+          <div className="px-4 pb-4 text-sm text-amber-800">This period hasn’t started yet—no pacing data.</div>
+        ) : warnings.length === 0 ? (
+          <div className="px-4 pb-4 text-sm text-emerald-800">All variable categories are on pace. ✅</div>
+        ) : (
+          <ul className="divide-y divide-amber-200">
+            {warnings.map((w) => (
+              <li key={w.category} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-amber-900 truncate">{w.category}</div>
+                    <div className="text-xs text-amber-900/80">
+                      On pace for <span className="font-semibold">${Number.isFinite(w.projected) ? w.projected.toFixed(2) : "∞"}</span>
+                      {" "}(budget ${w.budgeted.toFixed(2)}; over by ${Number.isFinite(w.overBy) ? w.overBy.toFixed(2) : "∞"}).
                     </div>
                   </div>
-                </li>
-              );
-            })}
+                  <div className="text-xs shrink-0">
+                    {w.canRecover ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-200/80 px-2 py-1 font-semibold text-amber-900">
+                        Wait <span className="mx-1">{w.waitDays}</span> day{w.waitDays === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-red-600 text-white px-2 py-1 font-semibold">
+                        STOP SPENDING
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
           </ul>
-        ) : (
-          <div className="px-4 py-6 text-center text-sm text-gray-500">No recent spends</div>
         )}
       </div>
 
