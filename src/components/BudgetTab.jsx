@@ -687,108 +687,106 @@ export default function BudgetTab({
   // -------------------- UI --------------------
   return (
     <>
-      <Card className="p-4 bg-slate-50 border border-slate-200">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-semibold text-lg text-slate-800">Budget</h2>
-          <div className="relative">
-            <Button type="button" variant="ghost" onClick={() => setMenuOpen((o) => !o)} className="rounded-md hover:bg-slate-100">
-              ⋯
-            </Button>
-            {menuOpen && (
-              <div className="absolute right-0 mt-1 w-48 rounded-md border border-slate-200 bg-white shadow-md z-20">
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  onClick={() => {
-                    undo();
-                    setMenuOpen(false);
-                  }}
-                  disabled={!history.length}
-                >
-                  Undo
-                </button>
-                <div className="px-2 py-1.5 border-t border-slate-100">
-                  <ExportPDFButton
-                    targetId="budget-tab"
-                    filename={`${startISO}_to_${endISO}_Budget.pdf`}
-                    compact
-                  />
-                </div>
-                <div className="px-2 py-1 border-t border-slate-100">
-                  <SharePDFButton
-                    targetId="budget-tab"
-                    filename={`${startISO}_to_${endISO}_Budget.pdf`}
-                    compact
-                  />
-                </div>
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    setPeriodOffset(0);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Reset to current period
-                </button>
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    setPeriodOpen(true);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Period settings…
-                </button>
-              </div>
-            )}
+      <Card className="p-3 md:p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold tracking-tight">
+            {(safePeriod.type === "SemiMonthly" ? "Semi-Monthly" : safePeriod.type)} Budget
+          </h2>
+          <div className="text-[11px] md:text-xs text-gray-600">
+            {offsetStart.toDateString()} – {offsetEnd.toDateString()}
           </div>
         </div>
 
-        {/* Period controls */}
-        <div data-noswipe className="mt-2 flex items-center gap-2">
-
+        <div className="relative">
           <Button
             type="button"
             variant="ghost"
-            className="!px-2 rounded-md hover:bg-slate-100"
-            onPointerUp={() => setPeriodOffset((o) => o - 1)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setPeriodOffset((o) => o - 1);
-              }
-            }}
-            title="Previous"
+            className="!px-2 !py-1"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="More"
           >
-            ←
+            ⋯
           </Button>
-
-
-          <Button
-            type="button"
-            variant="ghost"
-            className="!px-2 rounded-md hover:bg-slate-100"
-            onPointerUp={() => setPeriodOffset((o) => o + 1)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setPeriodOffset((o) => o + 1);
-              }
-            }}
-            title="Next"
-          >
-            →
-          </Button>
-
-          <button
-            type="button"
-            onClick={() => setPeriodOpen(true)}
-            className="px-2 py-1 rounded-md border border-slate-200 text-slate-700 text-xs md:text-sm bg-white hover:bg-slate-50"
-            title="Open period settings"
-          >
-            {safePeriod.type} • {startISO} → {endISO}
-          </button>
+          {menuOpen && (
+            <div className="absolute right-0 mt-1 w-48 rounded-md border border-slate-200 bg-white shadow-md z-20">
+              <button
+                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => {
+                  undo();
+                  setMenuOpen(false);
+                }}
+                disabled={!history.length}
+              >
+                Undo
+              </button>
+              <div className="px-2 py-1.5 border-t border-slate-100">
+                <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
+              </div>
+              <div className="px-2 py-1 border-t border-slate-100">
+                <SharePDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
+              </div>
+              <button
+                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                onClick={() => {
+                  setPeriodOffset(0);
+                  setMenuOpen(false);
+                }}
+              >
+                Reset to current period
+              </button>
+              <button
+                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                onClick={() => {
+                  setPeriodOpen(true);
+                  setMenuOpen(false);
+                }}
+              >
+                Period settings…
+              </button>
+            </div>
+          )}
         </div>
-      </Card>
+      </div>
+
+      {/* Period arrows (match Summary) */}
+      <div data-noswipe className="mt-2 flex items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          className="!px-2 !py-1 text-sm"
+          onPointerUp={() => setPeriodOffset((o) => o - 1)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setPeriodOffset((o) => o - 1);
+            }
+          }}
+          title="Previous"
+        >
+          ←
+        </Button>
+
+        <Button
+          type="button"
+          variant="ghost"
+          className="!px-2 !py-1 text-sm"
+          onPointerUp={() => setPeriodOffset((o) => o + 1)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setPeriodOffset((o) => o + 1);
+            }
+          }}
+          title="Next"
+        >
+          →
+        </Button>
+      </div>
+    </Card>
+
 
       {/* MAIN CARD */}
       <Card id="budget-tab" className="p-0 overflow-hidden border border-slate-200 bg-white">
