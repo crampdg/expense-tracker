@@ -34,6 +34,61 @@ export default function BudgetTab({
 
   const isBlank = (s) => !s || !s.trim();
 
+  function namesByType(budget) {
+    const byType = { inflow: new Set(), fixed: new Set(), variable: new Set() };
+    const add = (type, name) => byType[type].add(norm(name));
+
+    // inflows (parents only; no children expected)
+    for (const r of budget?.inflows || []) add("inflow", r.category);
+
+    // outflows (parents + children)
+    for (const r of budget?.outflows || []) {
+      const t = (r.type === "fixed") ? "fixed" : "variable";
+      const kids = Array.isArray(r.children) ? r.children : [];
+      if (kids.length === 0) add(t, r.category);
+      for (const c of kids) add(t, c.category);
+    }
+    return byType;
+  }
+
+  /**
+   * Checks if `name` already exists within `type` (inflow/fixed/variable).
+   * If you pass `exclude` with {id, isChild}, it won't count that row while editing.
+   */
+  function hasDuplicateName(budget, type, name, exclude = null) {
+    const target = norm(name);
+    if (!target) return false;
+
+    // Scan inflows
+    if (type === "inflow") {
+      for (const r of budget?.inflows || []) {
+        if (exclude && !exclude.isChild && r.id === exclude.id) continue;
+        if (norm(r.category) === target) return true;
+      }
+      return false;
+    }
+
+    // Scan outflows (parents + children) for the chosen type
+    const wantFixed = (type === "fixed");
+    for (const r of budget?.outflows || []) {
+      if (!!r.children && r.children.length) {
+        // children
+        for (const c of r.children) {
+          if ((!!c.type ? c.type === type : r.type === type) && norm(c.category) === target) {
+            if (!(exclude && exclude.isChild && c.id === exclude.id)) return true;
+          }
+        }
+      } else if ((!!r.type ? r.type === type : !wantFixed)) {
+        // parent without children behaves like a leaf
+        if (norm(r.category) === target) {
+          if (!(exclude && !exclude.isChild && r.id === exclude.id)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+
   const VALID_TYPES = new Set(["Monthly", "Biweekly", "Weekly", "SemiMonthly", "Annually"]);
   const todayISO = new Date().toISOString().slice(0, 10);
   const coerceISO = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(s || "") ? s : todayISO);
@@ -213,91 +268,82 @@ export default function BudgetTab({
   const netBudgeted = inflowsTotalBudget - outflowsTotalBudget;
   const netActual = inflowsTotalActual - outflowsTotalActual;
 
-  // ---- auto-rows from transactions (hardened: consider parents + children) --
+  // ---- auto-rows from transactions (bullet-proof, consider parents & children) --
   useEffect(() => {
-    const allNames = (rows) => {
-      const s = new Set();
-      for (const r of rows || []) {
-        s.add(norm(r.category));
-        for (const c of r.children || []) s.add(norm(c.category));
+    // Gather ALL existing names (parents + children); parent with no children counts as a leaf too
+    const collectAllNames = (rows = []) => {
+      const set = new Set();
+      for (const r of rows) {
+        set.add(norm(r.category));
+        const kids = Array.isArray(r.children) ? r.children : [];
+        for (const c of kids) set.add(norm(c.category));
       }
-      return s;
+      return set;
+    };
+    const collectLeafNames = (rows = []) => {
+      const set = new Set();
+      for (const r of rows) {
+        const kids = Array.isArray(r.children) ? r.children : [];
+        if (kids.length === 0) {
+          set.add(norm(r.category));       // parent with no children behaves like a leaf
+        } else {
+          for (const c of kids) set.add(norm(c.category));
+        }
+      }
+      return set;
     };
 
-    const haveInflowNames = allNames(getArray("inflows"));
-    const haveOutflowNames = allNames(getArray("outflows"));
+    const haveInflowAny = collectAllNames(getArray("inflows"));
+    const haveOutflowAny = collectAllNames(getArray("outflows"));
+    const haveOutflowLeaves = collectLeafNames(getArray("outflows"));
 
     const toAdd = { inflows: [], outflows: [] };
-    const pending = { inflows: new Set(), outflows: new Set() }; // avoid dupes within this pass
-
-
-    const haveOutflowChildNames = new Set(
-      getArray("outflows").flatMap(p => (p.children || []).map(c => norm(c.category)))
-    );
-    const haveInflowChildNames = new Set(
-      getArray("inflows").flatMap(p => (p.children || []).map(c => norm(c.category)))
-    );
+    const pending = { inflows: new Set(), outflows: new Set() }; // dedupe within this pass
 
     for (const t of txs) {
       if (isBlank(t.category)) continue;
       if (!(t.date >= startISO && t.date <= endISO)) continue;
 
-      // Normalize once
+      // If Money Time already routed this to an existing leaf, never auto-create.
+      if (t?.meta?.budgetRoute?.category && t.meta.budgetRoute.category.trim()) continue;
+
       const rawName = t.category;
       const n = norm(rawName);
 
-      // If Money Time already resolved this to an existing budget leaf (we set this in WalletTab),
-      // do NOT auto-create anything.
-      const routed = t?.meta?.budgetRoute?.category;
-        // If Money Time already resolved this, skip auto-create unconditionally.
-        if (routed && routed.trim()) continue;
-
-
       if (t.type === "inflow") {
-        if (!haveInflowNames.has(n) && !pending.inflows.has(n)) {
+        // Only auto-create if it doesn't exist anywhere (parent or child), and not already queued this pass
+        if (!haveInflowAny.has(n) && !pending.inflows.has(n)) {
           toAdd.inflows.push({ category: rawName, amount: 0, auto: true, children: [] });
           pending.inflows.add(n);
         }
       } else if (t.type === "expense") {
-        // ✅ Key rule: if name exists anywhere in outflows (parent OR child), do NOT add
-        if (!haveOutflowNames.has(n) && !haveOutflowChildNames.has(n) && !pending.outflows.has(n)) {
+        // ✅ Critical rule: if the name exists ANYWHERE in outflows (parent or child), DO NOT add.
+        // Also, if it’s already a known LEAF (child or lone parent), DO NOT add.
+        if (!haveOutflowAny.has(n) && !haveOutflowLeaves.has(n) && !pending.outflows.has(n)) {
           toAdd.outflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
           pending.outflows.add(n);
         }
       }
     }
 
-
     if (toAdd.inflows.length || toAdd.outflows.length) {
-    setBudgets((prev) => {
-      // use the same robust normalizer defined above (do not shadow it)
-      const allNames = (rows) => {
-        const s = new Set();
-        for (const r of (Array.isArray(rows) ? rows : [])) {
-          s.add(norm(r.category));
-          for (const c of (r.children || [])) s.add(norm(c.category));
-        }
-        return s;
-      };
+      setBudgets((prev) => {
+        // Re-check against current state to avoid races
+        const haveInNow = collectAllNames(prev?.inflows || []);
+        const haveOutNow = collectAllNames(prev?.outflows || []);
 
+        const addIn = toAdd.inflows.filter((x) => !haveInNow.has(norm(x.category)));
+        const addOut = toAdd.outflows.filter((x) => !haveOutNow.has(norm(x.category)));
 
-      // 🔒 Re-check against the *current* budget before committing
-      const haveIn = allNames(prev?.inflows);
-      const haveOut = allNames(prev?.outflows);
-
-      const addIn = toAdd.inflows.filter((x) => !haveIn.has(norm(x.category)));
-      const addOut = toAdd.outflows.filter((x) => !haveOut.has(norm(x.category)));
-
-      return {
-        ...prev,
-        inflows: [...normalizeTree(prev?.inflows, "inflows"), ...addIn],
-        outflows: [...normalizeTree(prev?.outflows, "outflows"), ...addOut],
-      };
-    });
-  }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        return {
+          ...prev,
+          inflows: [...normalizeTree(prev?.inflows, "inflows"), ...addIn],
+          outflows: [...normalizeTree(prev?.outflows, "outflows"), ...addOut],
+        };
+      });
+    }
   }, [startISO, endISO, txs]);
+
 
 
   // -------------------- collapse state (persisted) ---------------------------

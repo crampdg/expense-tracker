@@ -392,14 +392,17 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     // 🔎 Resolve the category to an existing leaf so no new row is created
-    const hit = resolveExistingCategory(budget, tx.category, tx.type);
+    const hit = resolveExistingCategory(budget, (tx.category || "").trim(), tx.type);
     if (hit?.leaf) {
-      tx.category = hit.leaf.category || tx.category;
+      const routedName = hit.leaf.category || tx.category;
+      tx.category = routedName;
       tx.meta = {
         ...(tx.meta || {}),
-        budgetRoute: { bucket: hit.bucket, category: hit.leaf.category },
+        // This flag is what the Budget tab reads to NEVER auto-create a duplicate
+        budgetRoute: { bucket: hit.bucket, category: routedName }
       };
     }
+
 
     // Hand off and capture the committed ID
     const committedId = onAddTransaction(tx) ?? tx.id;

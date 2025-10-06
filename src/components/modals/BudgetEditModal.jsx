@@ -2,6 +2,13 @@ import Modal from '../ui/Modal.jsx'
 import Button from '../ui/Button.jsx'
 import { useState, useEffect, useRef } from 'react'
 
+// ---- Duplicate-name helpers (local to modal) ----
+const norm = (s) => (s || '').toLowerCase().trim();
+function toSet(arr) {
+  return new Set((arr || []).map((v) => norm(v)));
+}
+
+
 /**
  * Props:
  * - open, onClose
@@ -62,16 +69,38 @@ export default function BudgetEditModal({
     (form.category || '').trim() !== (originalCategoryRef.current || '').trim()
 
   const handleSave = () => {
+    const newName = (form.category || '').trim();
+    const originalName = (originalCategoryRef.current || '').trim();
+
+    // Determine intended type for uniqueness check
+    const intendedType = !isOutflows ? 'inflow' : (form.type === 'fixed' ? 'fixed' : 'variable');
+
+    // Pull existing names by type if the parent provided them (recommended).
+    const byType = item?.existingNamesByType || {};
+    const existing = {
+      inflow: toSet(byType.inflow),
+      fixed: toSet(byType.fixed),
+      variable: toSet(byType.variable),
+    };
+
+    // Block duplicates (case-insensitive + trimmed) within the intended type,
+    // but allow keeping the same name while editing the same row.
+    if (newName && norm(newName) !== norm(originalName) && existing[intendedType]?.has(norm(newName))) {
+      window?.alert?.(`A ${intendedType} category named “${newName}” already exists. Choose a different name or merge.`);
+      return;
+    }
+
     const payload = {
-      category: (form.category || '').trim() || 'Untitled',
+      category: newName || 'Untitled',
       amount: parentIsSelected ? 0 : Number(form.amount || 0),
       parent: parentIsSelected ? form.parent : null,
       ...(isOutflows ? { type: form.type === 'fixed' ? 'fixed' : 'variable' } : {}),
-    }
-    const scope = renamed ? renameScope : 'none' // only ask to rename when name actually changed
-    onSave?.(payload, scope)
-    onClose?.()
+    };
+    const scope = renamed ? renameScope : 'none'; // only ask to rename when name actually changed
+    onSave?.(payload, scope);
+    onClose?.();
   }
+
 
   const handleDelete = () => {
     onDelete?.()
