@@ -270,6 +270,23 @@ export default function BudgetTab({
 
   // ---- auto-rows from transactions (bullet-proof, consider parents & children) --
   useEffect(() => {
+    // Build a map of every existing budget name -> canonical casing
+    const outflowNameMap = new Map();
+    (budgets?.outflows || []).forEach((p) => {
+      if (p?.category) outflowNameMap.set(norm(p.category), String(p.category).trim());
+      (p?.children || []).forEach((c) => {
+        if (c?.category) outflowNameMap.set(norm(c.category), String(c.category).trim());
+      });
+    });
+
+    const inflowNameMap = new Map();
+    (budgets?.inflows || []).forEach((p) => {
+      if (p?.category) inflowNameMap.set(norm(p.category), String(p.category).trim());
+      (p?.children || []).forEach((c) => {
+        if (c?.category) inflowNameMap.set(norm(c.category), String(c.category).trim());
+      });
+    });
+
     // Gather ALL existing names (parents + children); parent with no children counts as a leaf too
     const collectAllNames = (rows = []) => {
       const set = new Set();
@@ -305,24 +322,39 @@ export default function BudgetTab({
       if (!(t.date >= startISO && t.date <= endISO)) continue;
 
       // If Money Time already routed this to an existing leaf, never auto-create.
-      if (t?.meta?.budgetRoute?.category && t.meta.budgetRoute.category.trim()) continue;
+      if (t?.meta?.budgetRoute?.category?.trim()) continue;
 
-      const rawName = t.category;
-      const n = norm(rawName);
+
+      let rawName = t.category ?? "";
+      let n = norm(rawName);
+
+      // Snap to canonical casing if it exists already
+      if (t.type === "outflow" && outflowNameMap.has(n)) {
+        rawName = outflowNameMap.get(n);
+        n = norm(rawName);
+      } else if (t.type === "inflow" && inflowNameMap.has(n)) {
+        rawName = inflowNameMap.get(n);
+        n = norm(rawName);
+      }
+
 
       if (t.type === "inflow") {
         // Only auto-create if it doesn't exist anywhere (parent or child), and not already queued this pass
-        if (!haveInflowAny.has(n) && !pending.inflows.has(n)) {
+        if (!inflowNameMap.has(n) && !pending.inflows.has(n)) {
           toAdd.inflows.push({ category: rawName, amount: 0, auto: true, children: [] });
           pending.inflows.add(n);
         }
-      } else if (t.type === "expense") {
+
+      } else if (t.type === "outflow" || t.type === "expense") {
+
         // ✅ Critical rule: if the name exists ANYWHERE in outflows (parent or child), DO NOT add.
         // Also, if it’s already a known LEAF (child or lone parent), DO NOT add.
-        if (!haveOutflowAny.has(n) && !haveOutflowLeaves.has(n) && !pending.outflows.has(n)) {
+        // If this name already exists anywhere (parent or child), do NOT auto-create
+        if (!outflowNameMap.has(n) && !pending.outflows.has(n)) {
           toAdd.outflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
           pending.outflows.add(n);
         }
+
       }
     }
 
