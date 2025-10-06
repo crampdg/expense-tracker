@@ -325,27 +325,31 @@ export default function BudgetTab({
       if (t?.meta?.budgetRoute?.category?.trim()) continue;
 
 
+
       let rawName = t.category ?? "";
       let n = norm(rawName);
+      const tType = (t.type || "").toLowerCase(); // normalize once
+
 
       // Snap to canonical casing if it exists already
-      if (t.type === "outflow" && outflowNameMap.has(n)) {
+      if ((tType === "outflow" || tType === "expense") && outflowNameMap.has(n)) {
         rawName = outflowNameMap.get(n);
         n = norm(rawName);
-      } else if (t.type === "inflow" && inflowNameMap.has(n)) {
+      } else if (tType === "inflow" && inflowNameMap.has(n)) {
         rawName = inflowNameMap.get(n);
         n = norm(rawName);
       }
 
 
-      if (t.type === "inflow") {
+
+      if (tType === "inflow") {
         // Only auto-create if it doesn't exist anywhere (parent or child), and not already queued this pass
         if (!inflowNameMap.has(n) && !pending.inflows.has(n)) {
           toAdd.inflows.push({ category: rawName, amount: 0, auto: true, children: [] });
           pending.inflows.add(n);
         }
 
-      } else if (t.type === "outflow" || t.type === "expense") {
+      } else if (tType === "outflow" || tType === "expense") {
 
         // ✅ Critical rule: if the name exists ANYWHERE in outflows (parent or child), DO NOT add.
         // Also, if it’s already a known LEAF (child or lone parent), DO NOT add.
