@@ -475,19 +475,23 @@ export default function BudgetTab({
     const oldName = originalItem?.category ?? "";
     const wasSub = !isNew && path.length === 2;
 
-    // ---- Duplicate-name hard block (case-insensitive, across parents + subs in same type)
+    // ---- Duplicate-name hard block (skip if the name didn't change)
     const intendedType = section === "inflows" ? "inflow" : desiredType;
-    if (section === "inflows") {
-      if (hasDuplicateName(budgets, "inflow", newName)) {
-        window?.alert?.(`An inflow named “${newName}” already exists.`);
-        return;
-      }
-    } else {
-      if (hasDuplicateName(budgets, intendedType, newName)) {
-        window?.alert?.(`A ${intendedType} outflow named “${newName}” already exists.`);
-        return;
+    const isSameName = !isNew && newNorm === norm(oldName);
+    if (!isSameName) {
+      if (section === "inflows") {
+        if (hasDuplicateName(budgets, "inflow", newName)) {
+          window?.alert?.(`An inflow named “${newName}” already exists.`);
+          return;
+        }
+      } else {
+        if (hasDuplicateName(budgets, intendedType, newName)) {
+          window?.alert?.(`A ${intendedType} outflow named “${newName}” already exists.`);
+          return;
+        }
       }
     }
+
 
 
     const snapshot = JSON.parse(JSON.stringify(budgets));
