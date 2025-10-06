@@ -123,8 +123,19 @@ export default function BudgetTab({
         : [],
     }));
 
-  const getArray = (section) => normalizeTree(budgets?.[section], section);
+  // Memorize normalized rows so we don't rebuild them every render
+  const inflowRowsMemo = useMemo(
+    () => normalizeTree(budgets?.inflows, "inflows"),
+    [budgets?.inflows]
+  );
+  const outflowRowsMemo = useMemo(
+    () => normalizeTree(budgets?.outflows, "outflows"),
+    [budgets?.outflows]
+  );
+
+  const getArray = (section) => (section === "inflows" ? inflowRowsMemo : outflowRowsMemo);
   const setArray = (section, newArr) => setBudgets((prev) => ({ ...prev, [section]: newArr }));
+
   const getItemAtPath = (section, path) =>
     path.length === 1
       ? getArray(section)[path[0]]
@@ -269,78 +280,62 @@ export default function BudgetTab({
   const netActual = inflowsTotalActual - outflowsTotalActual;
 
   // ---- auto-rows from transactions (bullet-proof, consider parents & children) --
-   useEffect(() => {
-    const norm = (s) =>
-      (s || "")
-        .toLowerCase()
-        .normalize("NFKC")
-        .replace(/[\u200B-\u200D\uFEFF]/g, "")
-        .replace(/[’'`´]/g, "'")
-        .replace(/[-–—]/g, "-")
-        .replace(/[\s_]+/g, " ")
-        .trim();
+  useEffect(() => {
+    const txns = Array.isArray(transactions) ? transactions : [];
+    if (!txns.length) return;
 
     // Build a fast lookup of every existing outflow name (parents + children) across BOTH types
     const existingOutflowNames = new Set();
-    (budgets?.outflows || []).forEach((p) => {
+    for (const p of (budgets?.outflows || [])) {
       if (p?.category) existingOutflowNames.add(norm(p.category));
-      (p?.children || []).forEach((c) => {
+      for (const c of (p?.children || [])) {
         if (c?.category) existingOutflowNames.add(norm(c.category));
-      });
-    });
-
-    // When folding transactions into the current period, never auto-create an outflow row
-    // if the category name already exists anywhere (parent OR child, fixed OR variable).
-    // Also, if MoneyTime tagged a precise route, respect it.
-    const txns = ((Array.isArray(transactions) ? transactions : []) || []);
-    const next = structuredClone(budgets || { inflows: [], outflows: [] });
-
-    for (const t of txns) {
-      const rawType = String(t.type || "").toLowerCase();
-      const isOutflow = rawType ? rawType === "expense" : Number(t.amount) < 0;
-
-      const rawName = String(t.category || "").trim();
-      if (!rawName) continue;
-
-      if (isOutflow) {
-        const route = t?.meta?.budgetRoute;
-        if (route && norm(route.category)) {
-          // Route to the exact child/parent that already exists; do NOT create new rows
-          // (your existing code that increments Actuals should run here without creating rows)
-          continue; // this stops any auto-create fallback for routed items
-        }
-
-        // No route. If a row of this name already exists anywhere, do NOT create a new one.
-        if (existingOutflowNames.has(norm(rawName))) {
-          // Let your existing "accumulate Actuals" logic handle it; just don't create.
-          continue;
-        }
-
-        // Before allowing a new outflow row, bail if this name already exists anywhere.
-        const existsAnywhere = (() => {
-          const n = norm(rawName);
-          for (const p of next.outflows || []) {
-            if (norm(p.category) === n) return true;
-            for (const c of p.children || []) {
-              if (norm(c.category) === n) return true;
-            }
-          }
-          return false;
-        })();
-        if (existsAnywhere) {
-          // We already have this name (as parent or child). Just let Actuals roll up; do NOT create a new row.
-          continue;
-        }
-        // ... only if we get here do we allow creating a truly new outflow category
-        // (your current "auto-create" logic lives here)
-
-      } else {
-        // inflows unchanged (your existing inflow logic)
       }
     }
 
-    setBudgets(next);
-  }, [transactions, budgets, setBudgets]);
+    let changed = false;
+    let nextOutflows = budgets?.outflows || [];
+
+    const ensureCloned = () => {
+      if (changed) return;
+      nextOutflows = nextOutflows.map(p => ({
+        ...p,
+        children: Array.isArray(p.children) ? [...p.children] : []
+      }));
+      changed = true;
+    };
+
+    for (const t of txns) {
+      const rawName = String(t.category || "").trim();
+      if (!rawName) continue;
+      const n = norm(rawName);
+
+      const rawType = String(t.type || "").toLowerCase();
+      const isOutflow = rawType ? rawType === "expense" : Number(t.amount) < 0;
+      if (!isOutflow) continue;
+
+      // Respect explicit routing
+      if (t?.meta?.budgetRoute && norm(t.meta.budgetRoute.category)) continue;
+
+      // If name exists anywhere, don't create
+      if (existingOutflowNames.has(n)) continue;
+      const existsAnywhere = nextOutflows.some(
+        (p) => norm(p.category) === n || (p.children || []).some((c) => norm(c.category) === n)
+      );
+      if (existsAnywhere) continue;
+
+      // Truly new: create variable outflow, marked auto
+      ensureCloned();
+      nextOutflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
+      existingOutflowNames.add(n);
+    }
+
+    if (changed) {
+      setBudgets(prev => ({ ...prev, outflows: nextOutflows }));
+    }
+    // NOTE: depend only on the outflows slice to avoid re-running on unrelated state
+  }, [transactions, budgets?.outflows, setBudgets]);
+
 
 
   // ---- one-time dedupe: remove top-level outflows that duplicate any child name
@@ -939,9 +934,17 @@ export default function BudgetTab({
     };
 
     return (
-      <div className="overflow-auto" style={editing ? { pointerEvents: "none" } : undefined}>
+      <div
+        className="overflow-auto overscroll-contain"
+        style={{
+          WebkitOverflowScrolling: "touch",
+          contain: "layout paint style",
+          ...(editing ? { pointerEvents: "none" } : {})
+        }}
+      >
         <table className="w-full border-t border-slate-200 text-sm">
-          <thead className="bg-slate-100/80 backdrop-blur sticky top-0 z-10 border-b border-slate-200">
+          <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-200">
+
             <tr className="text-left text-slate-600">
               <th className="px-4 py-2 w-2/5">Title</th>
               <th className="px-4 py-2 text-right">Budget</th>
