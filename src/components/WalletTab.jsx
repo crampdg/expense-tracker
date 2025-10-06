@@ -1,3 +1,4 @@
+import { collectAllCategoryNames } from "../utils/budgetNames";
 import React, { useState, useMemo, useEffect } from "react";
 import MoneyTimeModal from "./modals/MoneyTimeModal";
 import SavingsSettingsModal from "./modals/SavingsSettingsModal.jsx";
@@ -217,29 +218,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }, [isInvestOpen]);
 
   const txs = Array.isArray(transactions) ? transactions : [];
-  const categories = useMemo(() => {
-    const set = new Set();
-    const push = (s) => { const v = (s || "").trim(); if (v) set.add(v); };
+  const categories = useMemo(() => collectAllCategoryNames(budget), [budget]);
 
-    // from budget: suggest children if parent has any; else the parent
-    const process = (rows = []) => {
-      for (const r of rows) {
-        const kids = Array.isArray(r?.children) ? r.children : [];
-        if (kids.length > 0) {
-          for (const c of kids) push(c?.category);
-        } else {
-          push(r?.category);
-        }
-      }
-    };
-    process(budget?.inflows || []);
-    process(budget?.outflows || []);
-
-    // from transactions history (ever used)
-    for (const t of txs) push(t?.category);
-
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [budget, txs]);
 
 
   useEffect(() => {
