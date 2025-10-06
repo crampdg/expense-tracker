@@ -218,7 +218,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }, [isInvestOpen]);
 
   const txs = Array.isArray(transactions) ? transactions : [];
-  const categories = useMemo(() => collectAllCategoryNames(budget), [budget]);
+  const categories = useMemo(() => collectAllCategoryNames(canonBudget), [canonBudget]);
+
 
 
 
@@ -299,14 +300,37 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
   // Normalize text for comparisons
   const normKey = (s) =>
-    (s || "")
-      .toLowerCase()
-      .normalize("NFKC")
-      .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width chars
-      .replace(/[’'`´]/g, "'")               // unify apostrophes
-      .replace(/[-–—]/g, "-")                // unify dashes
-      .replace(/[\s_]+/g, " ")               // collapse spaces/underscores
-      .trim();
+  (s || "")
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width chars
+    .replace(/[’'`´]/g, "'")               // unify apostrophes
+    .replace(/[-–—]/g, "-")                // unify dashes
+    .replace(/[\s_]+/g, " ")               // collapse spaces/underscores
+    .trim();
+
+  // Canonicalize budget for Wallet:
+  // - If a top-level outflow (with no children) has the same name as ANY child,
+  //   drop the top-level duplicate so Wallet never sees a $0 phantom row.
+  const canonBudget = useMemo(() => {
+    const b = budget || {};
+    const outflows = Array.isArray(b.outflows) ? b.outflows : [];
+    const childNames = new Set();
+    for (const p of outflows) {
+      for (const c of (p?.children || [])) {
+        const n = normKey(c?.category);
+        if (n) childNames.add(n);
+      }
+    }
+    const filteredOutflows = outflows.filter((p) => {
+      const hasKids = Array.isArray(p?.children) && p.children.length > 0;
+      const dupChild = childNames.has(normKey(p?.category));
+      // drop only if it's a parent with NO kids and it duplicates a child name
+      return !(dupChild && !hasKids);
+    });
+    return { ...b, outflows: filteredOutflows };
+  }, [budget]);
+
 
   // Collect only leaf rows (children == 0), preserving original refs
   const collectLeaves = (rows = [], bag = []) => {
@@ -372,7 +396,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     // 🔎 Resolve the category to an existing leaf so no new row is created
-    const hit = resolveExistingCategory(budget, (tx.category || "").trim(), tx.type);
+    const hit = resolveExistingCategory(canonBudget, (tx.category || "").trim(), tx.type);
+
     if (hit?.leaf) {
       const routedName = hit.leaf.category || tx.category;
       tx.category = routedName;
@@ -416,7 +441,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         };
 
         // 🔎 Resolve Savings too, so it hits an existing leaf if present
-        const outHit = resolveExistingCategory(budget, outTx.category, "expense");
+        const outHit = resolveExistingCategory(canonBudget, outTx.category, "expense");
+
         if (outHit?.leaf) {
           outTx.category = outHit.leaf.category || outTx.category;
           outTx.meta = {
@@ -435,8 +461,8 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
 
   // ---- Planned & actuals this period ----
-  const plannedInflows = useMemo(() => (budget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0), [budget]);
-  const plannedOutflows = useMemo(() => (budget?.outflows || []).reduce((s, o) => s + (Number(o.amount) || 0), 0), [budget]);
+  const plannedInflows = useMemo(() => (canonBudget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0), [canonBudget]);
+  const plannedOutflows = useMemo(() => (canonBudget?.outflows || []).reduce((s, o) => s + (Number(o.amount) || 0), 0), [canonBudget]);
 
   const { actualInflows, actualOutflows } = useMemo(() => {
     let inflow = 0, outflow = 0;
@@ -471,20 +497,20 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   /* =========================
      VARIABLE SPEND WARNINGS
      ========================= */
-  const variableBudgetTopLevel = useMemo(() => {
-    const out = new Map(); // key: normalized category -> { category, budgeted }
-    (budget?.outflows || []).forEach((o) => {
-      if (!o) return;
-      if (!isTopLevel(o)) return;
-      if (!isVariableOutflow(o)) return;
-      const cat = normCat(o.category);
-      if (!cat) return;
-      const amt = pickBudgeted(o);
-      const prev = out.get(cat);
-      out.set(cat, { category: cat, budgeted: (prev?.budgeted || 0) + amt });
-    });
-    return out;
-  }, [budget]);
+    const variableBudgetTopLevel = useMemo(() => {
+      const out = new Map(); // key: normalized category -> { category, budgeted }
+      (canonBudget?.outflows || []).forEach((o) => {
+        if (!o) return;
+        if (!isTopLevel(o)) return;
+        if (!isVariableOutflow(o)) return;
+        const cat = normCat(o.category);
+        if (!cat) return;
+        const amt = pickBudgeted(o);
+        const prev = out.get(cat);
+        out.set(cat, { category: cat, budgeted: (prev?.budgeted || 0) + amt });
+      });
+      return out;
+    }, [budget]);
 
   const spendByCategoryThisPeriod = useMemo(() => {
     const m = new Map();
