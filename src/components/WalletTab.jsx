@@ -494,20 +494,41 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   /* =========================
      VARIABLE SPEND WARNINGS
      ========================= */
-    const variableBudgetTopLevel = useMemo(() => {
-      const out = new Map(); // key: normalized category -> { category, budgeted }
-      (canonBudget?.outflows || []).forEach((o) => {
-        if (!o) return;
-        if (!isTopLevel(o)) return;
-        if (!isVariableOutflow(o)) return;
-        const cat = normCat(o.category);
-        if (!cat) return;
-        const amt = pickBudgeted(o);
-        const prev = out.get(cat);
-        out.set(cat, { category: cat, budgeted: (prev?.budgeted || 0) + amt });
-      });
-      return out;
-    }, [budget]);
+    const variableParents = useMemo(() => {
+      const parents = new Map(); // key: parentName -> { parentName, budgeted, children:[{name,budgeted,isParentLeaf?}] }
+      const outflows = Array.isArray(canonBudget?.outflows) ? canonBudget.outflows : [];
+
+      for (const o of outflows) {
+        if (!o || !isTopLevel(o) || !isVariableOutflow(o)) continue;
+
+        const parentName = normCat(o.category);
+        if (!parentName) continue;
+
+        const kids = Array.isArray(o.children) ? o.children : [];
+        const childList = [];
+        let parentBudget = 0;
+
+        if (kids.length > 0) {
+          for (const c of kids) {
+            const nm = normCat(c?.category);
+            if (!nm) continue;
+            const amt = pickBudgeted(c);
+            parentBudget += amt;
+            childList.push({ name: nm, budgeted: amt });
+          }
+        } else {
+          const amt = pickBudgeted(o);
+          parentBudget = amt;
+          // Parent behaves like its own leaf when no children exist
+          childList.push({ name: parentName, budgeted: amt, isParentLeaf: true });
+        }
+
+        parents.set(parentName, { parentName, budgeted: parentBudget, children: childList });
+      }
+
+      return parents;
+    }, [canonBudget]);
+
 
   const spendByCategoryThisPeriod = useMemo(() => {
     const m = new Map();
@@ -525,56 +546,85 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
   const warnings = useMemo(() => {
     const arr = [];
-    if (daysPassed <= 0) return arr; // before period starts, nothing to project
+    if (daysPassed <= 0) return arr; // no pacing before period starts
 
-    for (const { category, budgeted } of variableBudgetTopLevel.values()) {
-      const spent = spendByCategoryThisPeriod.get(category) || 0;
-      const allowedDaily = budgeted / Math.max(1, periodDays);
+    for (const model of variableParents.values()) {
+      const { parentName, budgeted, children } = model;
 
-      // Budget of 0 means any spend risks overshoot
-      if (budgeted <= 0 && spent > 0) {
+      // Capture any spend logged directly under the parent name (e.g., misc Food)
+      const directParentSpent = spendByCategoryThisPeriod.get(parentName) || 0;
+      const childNameSet = new Set(children.map(c => c.name));
+
+      let totalSpent = 0;
+      let totalProjected = 0;
+      let anyInfinite = false;
+
+      // Project each child's own pace
+      for (const child of children) {
+        const spent = spendByCategoryThisPeriod.get(child.name) || 0;
+        totalSpent += spent;
+
+        // If child has zero budget but is spending, we treat its projection as ∞ risk
+        if (child.budgeted <= 0 && spent > 0) {
+          anyInfinite = true;
+          continue;
+        }
+
+        const dailyRate = spent / Math.max(1, daysPassed);
+        const projected = dailyRate * periodDays;
+        totalProjected += projected;
+      }
+
+      // Add any "misc under parent" spend that didn't match a child
+      if (!childNameSet.has(parentName) && directParentSpent > 0) {
+        totalSpent += directParentSpent;
+        const miscDaily = directParentSpent / Math.max(1, daysPassed);
+        totalProjected += miscDaily * periodDays;
+      }
+
+      // If any child is effectively unbudgeted but spending, mark as over via Infinity
+      if (anyInfinite) {
         arr.push({
-          category,
+          category: parentName,
           budgeted,
-          spent,
+          spent: totalSpent + directParentSpent,
           projected: Infinity,
-          overBy: spent,
+          overBy: Infinity,
           canRecover: false,
           waitDays: null,
         });
         continue;
       }
 
-      // Current pace projection
-      const dailyRate = spent / Math.max(1, daysPassed);
-      const projected = dailyRate * periodDays;
+      // Standard overage detection
+      if (totalProjected > budgeted + 0.005) {
+        // Compute cooldown days using the parent's aggregate budget pace
+        const allowedDaily = budgeted / Math.max(1, periodDays);
 
-      if (projected > budgeted + 0.005) {
-        // How many zero-spend "cooldown" days to bring cumulative average down to allowed?
-        // Solve w >= spent/allowedDaily - daysPassed
-        let wait = Math.ceil(Math.max(0, spent / Math.max(1e-9, allowedDaily) - daysPassed));
+        // Solve waitDays >= totalSpent/allowedDaily - daysPassed
+        let wait = Math.ceil(Math.max(0, totalSpent / Math.max(1e-9, allowedDaily) - daysPassed));
         const remainingDays = Math.max(0, periodDays - daysPassed);
         const canRecover = wait <= remainingDays;
 
-        // If math says 0 but projection says over, force at least 1 day
         if (wait === 0) wait = 1;
 
         arr.push({
-          category,
+          category: parentName,
           budgeted,
-          spent,
-          projected,
-          overBy: projected - budgeted,
+          spent: totalSpent,
+          projected: totalProjected,
+          overBy: totalProjected - budgeted,
           canRecover,
           waitDays: canRecover ? wait : null,
         });
       }
     }
 
-    // Sort most urgent first (largest projected overage)
+    // Most urgent first
     arr.sort((a, b) => (b.overBy || 0) - (a.overBy || 0));
     return arr;
-  }, [variableBudgetTopLevel, spendByCategoryThisPeriod, daysPassed, periodDays]);
+  }, [variableParents, spendByCategoryThisPeriod, daysPassed, periodDays]);
+
 
   // ---- UI handlers ----
   const openSettings = () => setShowSettings(true);
