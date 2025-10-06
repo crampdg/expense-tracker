@@ -775,11 +775,11 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-amber-900 truncate">{w.category}</div>
                     <div className="text-sm opacity-80">
-                      On pace for {fmtMoney(w.projected)} (budget {fmtMoney(w.budgeted)}).
+                      Projected: {fmtMoney(w.projected)} (/ {fmtMoney(w.budgeted)}).
                     </div>
                     <div className="text-sm mt-1">
                       {Number.isFinite(w.projected) && (
-                        <> — Max next purchase now: <strong>{fmtMoney(w.nextMaxNow)}</strong></>
+                        <> Budget left: <strong>{fmtMoney(w.nextMaxNow)}</strong></>
                       )}
                     </div>
 
