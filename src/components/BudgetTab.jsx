@@ -296,7 +296,8 @@ export default function BudgetTab({
     const next = structuredClone(budgets || { inflows: [], outflows: [] });
 
     for (const t of txns) {
-      const isOutflow = Number(t.amount) < 0;
+      const isOutflow = (t.type === "expense");
+
       const rawName = String(t.category || "").trim();
       if (!rawName) continue;
 
