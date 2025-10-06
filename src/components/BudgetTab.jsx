@@ -225,21 +225,33 @@ export default function BudgetTab({
     for (const t of txs) {
       if (isBlank(t.category)) continue;
       if (!(t.date >= startISO && t.date <= endISO)) continue;
-      const n = norm(t.category);
+
+      // Normalize once
+      const rawName = t.category;
+      const n = norm(rawName);
+
+      // If Money Time already resolved this to an existing budget leaf (we set this in WalletTab),
+      // do NOT auto-create anything.
+      const routed = t?.meta?.budgetRoute?.category;
+      if (routed && routed.trim()) {
+        // Extra safety: if the routed name is known anywhere (parent or child), skip creation.
+        if (haveOutflowNames.has(norm(routed)) || haveInflowNames.has(norm(routed))) continue;
+      }
 
       if (t.type === "inflow") {
         if (!haveInflowNames.has(n) && !pending.inflows.has(n)) {
-          toAdd.inflows.push({ category: t.category, amount: 0, auto: true, children: [] });
+          toAdd.inflows.push({ category: rawName, amount: 0, auto: true, children: [] });
           pending.inflows.add(n);
         }
       } else if (t.type === "expense") {
         // ✅ Key rule: if name exists anywhere in outflows (parent OR child), do NOT add
         if (!haveOutflowNames.has(n) && !pending.outflows.has(n)) {
-          toAdd.outflows.push({ category: t.category, amount: 0, auto: true, children: [], type: "variable" });
+          toAdd.outflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
           pending.outflows.add(n);
         }
       }
     }
+
 
     if (toAdd.inflows.length || toAdd.outflows.length) {
     setBudgets((prev) => {
