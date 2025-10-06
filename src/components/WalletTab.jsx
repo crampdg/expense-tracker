@@ -217,9 +217,30 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }, [isInvestOpen]);
 
   const txs = Array.isArray(transactions) ? transactions : [];
-  const inflowCats = (budget?.inflows || []).map((i) => i.category);
-  const outflowCats = (budget?.outflows || []).map((o) => o.category);
-  const categories = Array.from(new Set([...inflowCats, ...outflowCats])).filter(Boolean);
+  const categories = useMemo(() => {
+  const set = new Set();
+  const push = (s) => {
+    const v = (s || "").trim();
+    if (v) set.add(v);
+  };
+
+  const process = (rows = []) => {
+    for (const r of rows) {
+      const kids = Array.isArray(r?.children) ? r.children : [];
+      if (kids.length > 0) {
+        // parent with children ⇒ suggest the children
+        for (const c of kids) push(c?.category);
+      } else {
+        // high-level (leaf) ⇒ suggest the parent
+        push(r?.category);
+      }
+    }
+  };
+
+  process(budget?.inflows || []);
+  process(budget?.outflows || []);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}, [budget]);
 
   useEffect(() => {
     const tick = setInterval(() => {
