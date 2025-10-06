@@ -292,7 +292,7 @@ export default function BudgetTab({
     // When folding transactions into the current period, never auto-create an outflow row
     // if the category name already exists anywhere (parent OR child, fixed OR variable).
     // Also, if MoneyTime tagged a precise route, respect it.
-    const txns = (transactionsByPeriod?.[periodKey] || []);
+    const txns = ((Array.isArray(transactions) ? transactions : []) || []);
     const next = structuredClone(budgets || { inflows: [], outflows: [] });
 
     for (const t of txns) {

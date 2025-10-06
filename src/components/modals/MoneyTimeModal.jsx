@@ -1,3 +1,4 @@
+// src/components/modals/MoneyTimeModal.jsx
 import Modal from '../ui/Modal.jsx'
 import Button from '../ui/Button.jsx'
 import { useState, useEffect } from 'react'
@@ -23,7 +24,6 @@ const snapToKnownCategory = (name, list = []) => {
   return map.get(n) || name.trim();
 };
 
-
 export default function MoneyTimeModal({ open, onClose, onSave, categories = [] }) {
   const [form, setForm] = useState({
     type: 'expense',
@@ -31,7 +31,7 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
     date: new Date().toISOString().slice(0, 10),
     category: '',
     description: '',
-  })
+  });
 
   useEffect(() => {
     if (!open) {
@@ -41,64 +41,42 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
         date: new Date().toISOString().slice(0, 10),
         category: '',
         description: '',
-      })
-    }
-  }, [open])
-
-  const handleChange = (field, value) => {
-    setForm(f => ({ ...f, [field]: value }))
-  }
-
-  // Build a canonical map of ALL existing budget names (parents + children, fixed + variable)
-  const nameMap = new Map(); // norm(name) -> { category, isChild, parentCategory, type }
-  (budgets?.outflows || []).forEach((p) => {
-    if (p?.category) {
-      nameMap.set(norm(p.category), {
-        category: String(p.category).trim(),
-        isChild: false,
-        parentCategory: null,
-        type: p?.type || "variable",
       });
     }
-    (p?.children || []).forEach((c) => {
-      if (c?.category) {
-        nameMap.set(norm(c.category), {
-          category: String(c.category).trim(),
-          isChild: true,
-          parentCategory: String(p.category || "").trim() || null,
-          // child type inherits its own type, else parent’s type, default variable
-          type: c?.type || p?.type || "variable",
-        });
-      }
-    });
-  });
+  }, [open]);
 
-  const typed = (cleanForm.category || "").trim();
-  const hit = nameMap.get(norm(typed));
+  const handleChange = (field, value) => {
+    setForm(f => ({ ...f, [field]: value }));
+  };
 
-  if (typed && hit) {
-    // Snap to canonical casing and attach a precise route
-    const snapped = hit.category;
-    const finalForm = {
-      ...cleanForm,
-      category: snapped,
-      meta: {
-        ...(cleanForm.meta || {}),
-        budgetRoute: {
-          category: snapped,
-          isChild: !!hit.isChild,
-          parentCategory: hit.parentCategory,
-          type: hit.type, // "fixed" | "variable"
-        },
-      },
+  const handleSave = () => {
+    const cleanForm = {
+      ...form,
+      amount: Number(form.amount) || 0,
     };
-    onSave(finalForm);
+
+    // If the typed name matches any known category (case-insensitive, trimmed),
+    // snap to the canonical name and attach a simple route hint so BudgetTab won’t auto-create.
+    const typed = (cleanForm.category || '').trim();
+    const exists = categories.some((c) => norm(c) === norm(typed));
+
+    if (typed && exists) {
+      const snapped = snapToKnownCategory(typed, categories);
+      const finalForm = {
+        ...cleanForm,
+        category: snapped,
+        meta: {
+          ...(cleanForm.meta || {}),
+          budgetRoute: { category: snapped },
+        },
+      };
+      onSave(finalForm);
+    } else {
+      onSave(cleanForm);
+    }
+
     onClose();
-    return;
-  }
-
-
-
+  };
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -110,7 +88,6 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
           e.stopPropagation();
         }}
       >
-
         <select
           className="input"
           value={form.type}
@@ -129,7 +106,6 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
           onChange={e => handleChange('amount', e.target.value)}
           autoFocus
         />
-
 
         <input
           type="date"
@@ -167,5 +143,5 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
         </div>
       </div>
     </Modal>
-  )
+  );
 }
