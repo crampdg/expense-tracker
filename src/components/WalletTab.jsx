@@ -506,28 +506,31 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
         const kids = Array.isArray(o.children) ? o.children : [];
         const childList = [];
-        let parentBudget = 0;
+        const parentAmount = pickBudgeted(o);
 
+        let sumChildBudgets = 0;
         if (kids.length > 0) {
           for (const c of kids) {
             const nm = normCat(c?.category);
             if (!nm) continue;
-            const amt = pickBudgeted(c);
-            parentBudget += amt;
+            const amt = pickBudgeted(c);      // often 0 due to normalizeTree
+            sumChildBudgets += amt;
             childList.push({ name: nm, budgeted: amt });
           }
         } else {
-          const amt = pickBudgeted(o);
-          parentBudget = amt;
           // Parent behaves like its own leaf when no children exist
-          childList.push({ name: parentName, budgeted: amt, isParentLeaf: true });
+          childList.push({ name: parentName, budgeted: parentAmount, isParentLeaf: true });
         }
+
+        // ✅ Use the parent's own amount if set; otherwise fall back to sum of children.
+        const parentBudget = parentAmount > 0 ? parentAmount : sumChildBudgets;
 
         parents.set(parentName, { parentName, budgeted: parentBudget, children: childList });
       }
 
       return parents;
     }, [canonBudget]);
+
 
 
   const spendByCategoryThisPeriod = useMemo(() => {
@@ -546,84 +549,91 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
   const warnings = useMemo(() => {
     const arr = [];
-    if (daysPassed <= 0) return arr; // no pacing before period starts
+    if (daysPassed <= 0) return arr;
 
     for (const model of variableParents.values()) {
       const { parentName, budgeted, children } = model;
 
-      // Capture any spend logged directly under the parent name (e.g., misc Food)
       const directParentSpent = spendByCategoryThisPeriod.get(parentName) || 0;
       const childNameSet = new Set(children.map(c => c.name));
 
       let totalSpent = 0;
       let totalProjected = 0;
-      let anyInfinite = false;
 
-      // Project each child's own pace
+      // Track which child is driving the overage
+      let driver = null; // { name, spent, projected }
+
       for (const child of children) {
         const spent = spendByCategoryThisPeriod.get(child.name) || 0;
         totalSpent += spent;
 
-        // If child has zero budget but is spending, we treat its projection as ∞ risk
-        if (child.budgeted <= 0 && spent > 0) {
-          anyInfinite = true;
-          continue;
-        }
-
         const dailyRate = spent / Math.max(1, daysPassed);
         const projected = dailyRate * periodDays;
         totalProjected += projected;
+
+        if (!driver || projected > driver.projected) {
+          driver = { name: child.name, spent, projected };
+        }
       }
 
-      // Add any "misc under parent" spend that didn't match a child
+      // Include any spend recorded directly under the parent (misc)
       if (!childNameSet.has(parentName) && directParentSpent > 0) {
         totalSpent += directParentSpent;
-        const miscDaily = directParentSpent / Math.max(1, daysPassed);
-        totalProjected += miscDaily * periodDays;
+        const miscProjected = (directParentSpent / Math.max(1, daysPassed)) * periodDays;
+        totalProjected += miscProjected;
+
+        if (!driver || miscProjected > driver.projected) {
+          driver = { name: parentName, spent: directParentSpent, projected: miscProjected };
+        }
       }
 
-      // If any child is effectively unbudgeted but spending, mark as over via Infinity
-      if (anyInfinite) {
+      // If parent budget is zero/missing yet there's spend, treat as hard stop
+      if ((budgeted || 0) <= 0 && totalSpent > 0) {
+        const nextMaxNow = Math.max(0, (budgeted || 0) - totalSpent);
         arr.push({
           category: parentName,
-          budgeted,
-          spent: totalSpent + directParentSpent,
+          budgeted: 0,
+          spent: totalSpent,
           projected: Infinity,
           overBy: Infinity,
           canRecover: false,
           waitDays: null,
+          driver,
+          nextMaxNow,
         });
         continue;
       }
 
-      // Standard overage detection
-      if (totalProjected > budgeted + 0.005) {
-        // Compute cooldown days using the parent's aggregate budget pace
-        const allowedDaily = budgeted / Math.max(1, periodDays);
-
-        // Solve waitDays >= totalSpent/allowedDaily - daysPassed
+      if (totalProjected > (budgeted || 0) + 0.005) {
+        const allowedDaily = (budgeted || 0) / Math.max(1, periodDays);
+        // waitDays >= totalSpent/allowedDaily - daysPassed
         let wait = Math.ceil(Math.max(0, totalSpent / Math.max(1e-9, allowedDaily) - daysPassed));
         const remainingDays = Math.max(0, periodDays - daysPassed);
         const canRecover = wait <= remainingDays;
-
         if (wait === 0) wait = 1;
+
+        const nextMaxNow = Math.max(0, (budgeted || 0) - totalSpent);
 
         arr.push({
           category: parentName,
           budgeted,
           spent: totalSpent,
           projected: totalProjected,
-          overBy: totalProjected - budgeted,
+          overBy: totalProjected - (budgeted || 0),
           canRecover,
           waitDays: canRecover ? wait : null,
+          driver,
+          nextMaxNow,
         });
       }
     }
 
-    // Most urgent first
     arr.sort((a, b) => (b.overBy || 0) - (a.overBy || 0));
     return arr;
   }, [variableParents, spendByCategoryThisPeriod, daysPassed, periodDays]);
+
+
+
 
 
   // ---- UI handlers ----
@@ -749,10 +759,23 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-amber-900 truncate">{w.category}</div>
-                    <div className="text-xs text-amber-900/80">
-                      On pace for <span className="font-semibold">${Number.isFinite(w.projected) ? w.projected.toFixed(2) : "∞"}</span>
-                      {" "}(budget ${w.budgeted.toFixed(2)}; over by ${Number.isFinite(w.overBy) ? w.overBy.toFixed(2) : "∞"}).
+                    <div className="text-sm opacity-80">
+                      On pace for {fmtMoney(w.projected)} (budget {fmtMoney(w.budgeted)}; over by {fmtMoney(w.overBy)}).
                     </div>
+                    <div className="text-sm mt-1">
+                      {w.canRecover
+                        ? (<strong>Wait ~{w.waitDays} day{w.waitDays === 1 ? "" : "s"}</strong>)
+                        : (<strong>STOP SPENDING</strong>)
+                      }
+                      {Number.isFinite(w.projected) && (
+                        <> — Max next purchase now: <strong>{fmtMoney(w.nextMaxNow)}</strong></>
+                      )}
+                      {w?.driver && Number.isFinite(w.projected) && (
+                        <> — Driver: <strong>{(typeof restoreCase === "function" ? restoreCase(w.driver.name) : w.driver.name)}</strong> on pace for {fmtMoney(w.driver.projected)} (spent {fmtMoney(w.driver.spent)}).</>
+                      )}
+                    </div>
+
+
                   </div>
                   <div className="text-xs shrink-0">
                     {w.canRecover ? (
