@@ -958,13 +958,15 @@ export default function BudgetTab({
               type="button"
               variant="ghost"
               className="!px-2 !py-1"
-              onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();() => setMenuOpen((o) => !o)}}
+              data-noswipe
+              onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();setMenuOpen((o) => !o)}}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               title="More"
             >
               ⋯
             </Button>
+
             {menuOpen && (
               <div className="absolute right-0 mt-1 w-48 rounded-md border border-slate-200 bg-white shadow-md z-20">
                 <button
@@ -1062,14 +1064,13 @@ export default function BudgetTab({
           <Button
             type="button"
             variant="ghost"
-            onClick={() => {
-              const len = getArray("inflows").length;
-              setEditing({ section: "inflows", path: [len], isNew: true });
-            }}
+            data-noswipe
+            onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();const len = getArray("inflows").length;setEditing({ section: "inflows", path: [len], isNew: true });}}
             className="!px-3 !py-1 text-sm rounded-full bg-emerald-600/10 hover:bg-emerald-600/15 text-emerald-800"
           >
             + Add
           </Button>
+
         </div>
         <SectionTable section="inflows" rows={getArray("inflows")} baseRows={getArray("inflows")} />
 
@@ -1079,14 +1080,13 @@ export default function BudgetTab({
           <Button
             type="button"
             variant="ghost"
-            onClick={() => {
-              const len = getArray("outflows").length;
-              setEditing({ section: "outflows", path: [len], isNew: true, presetType: "fixed" });
-            }}
+            data-noswipe
+            onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();const len = getArray("outflows").length;setEditing({ section: "outflows", path: [len], isNew: true, presetType: "fixed" });}}
             className="!px-3 !py-1 text-sm rounded-full bg-emerald-600/10 hover:bg-emerald-600/15 text-emerald-800"
           >
             + Add
           </Button>
+
         </div>
         <SectionTable
           section="outflows"
@@ -1101,14 +1101,13 @@ export default function BudgetTab({
           <Button
             type="button"
             variant="ghost"
-            onClick={() => {
-              const len = getArray("outflows").length;
-              setEditing({ section: "outflows", path: [len], isNew: true, presetType: "variable" });
-            }}
+            data-noswipe
+            onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();const len = getArray("outflows").length;setEditing({ section: "outflows", path: [len], isNew: true, presetType: "variable" });}}
             className="!px-3 !py-1 text-sm rounded-full bg-emerald-600/10 hover:bg-emerald-600/15 text-emerald-800"
           >
             + Add
           </Button>
+
         </div>
         <SectionTable
           section="outflows"
@@ -1178,7 +1177,7 @@ export default function BudgetTab({
             </Button>
             <Button data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();setPeriodOpen(false);}}>Done</Button>
 
-            <Button onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();() => setPeriodOpen(false)}}>Done</Button>
+            
           </div>
         </div>
       </Modal>
