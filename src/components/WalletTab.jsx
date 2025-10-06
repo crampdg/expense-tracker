@@ -773,7 +773,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         <MoneyTimeModal
           open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
-          onSave={FileSystemDirectoryHandleAddTransaction}
+          onSave={handleAddTransaction}
           categories={categories}
         />
       )}
