@@ -167,6 +167,21 @@ function currency(n) {
   const abs = Math.abs(num);
   return sign + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+// Pretty $ formatting (e.g., "-$1,234.56"); returns "—" for non-finite inputs
+function fmtMoney(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "—";
+  const sign = num < 0 ? "-" : "";
+  const abs = Math.abs(num);
+  return sign + "$" + abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// No-op case restorer (kept simple so ESLint stops complaining; upgrade later if needed)
+function restoreCase(s) {
+  return (s ?? "");
+}
+
 const amtClass = (n) => n < 0 ? "text-red-600" : n > 0 ? "text-emerald-700" : "text-gray-700";
 
 /* ---------- compute reserved for this period ---------- */
