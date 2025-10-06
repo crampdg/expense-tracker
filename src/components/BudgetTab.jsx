@@ -743,24 +743,50 @@ export default function BudgetTab({
   };
 
   const claimRow = ({ section, path, isNew }, form) => {
-    const isSub = path?.length === 2;
+    // Always save first so state is canonical
     saveRow(
       { section, path, isNew },
       { category: form.category, amount: form.amount, parent: null, type: form?.type },
       "none"
     );
-    if (isSub) return;
-    const k = norm((form.category || "").trim() || "Untitled");
-    const arr = getArray(section);
-    const found = arr.findIndex((r) => norm(r.category) === k);
-    if (found > -1) {
+
+    // Only claim for top-level rows (subs can’t be claimed directly)
+    if (path?.length === 2) return;
+
+    // Re-read from current budgets to get the true budgeted amount
+    const keyName = norm((form.category || "").trim() || "Untitled");
+    const rows = getArray(section);
+    const idx = rows.findIndex(r => norm(r.category) === keyName);
+
+    if (idx > -1) {
+      const row = rows[idx];
+      const budgetedAmount = Number(row.amount || 0);
+
+      // Impact wallet
       onClaim?.({
         section,
-        category: arr[found].category,
-        amount: Number(form.amount || 0),
+        category: row.category,
+        amount: budgetedAmount,
+        source: "budget-claim"
       });
+
+      // Navigate to Wallet tab (several safe fallbacks)
+      try {
+        window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } }));
+      } catch {}
+      try {
+        // hash fallback (if your app watches location.hash)
+        if (typeof window !== "undefined") window.location.hash = "#wallet";
+      } catch {}
+      try {
+        // localStorage signal fallback (if your app checks this on focus)
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("bleh:navigate:tab", "wallet");
+        }
+      } catch {}
     }
   };
+
 
   // -------------------- type-aware table helpers --------------------
   const outflowRowsFor = (desiredType) => {
