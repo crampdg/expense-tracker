@@ -219,7 +219,8 @@ export default function BudgetTab({
     const haveOutflowNames = allNames(getArray("outflows"));
 
     const toAdd = { inflows: [], outflows: [] };
-    const pending = { inflows: new Set(), outflows: new Set() };
+    const pending = { inflows: new Set(), outflows: new Set() }; // avoid dupes within this pass
+
 
     for (const t of txs) {
       if (isBlank(t.category)) continue;
@@ -241,12 +242,32 @@ export default function BudgetTab({
     }
 
     if (toAdd.inflows.length || toAdd.outflows.length) {
-      setBudgets((prev) => ({
+    setBudgets((prev) => {
+      const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+      const allNames = (rows) => {
+        const s = new Set();
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          s.add(norm(r.category));
+          for (const c of (r.children || [])) s.add(norm(c.category));
+        }
+        return s;
+      };
+
+      // 🔒 Re-check against the *current* budget before committing
+      const haveIn = allNames(prev?.inflows);
+      const haveOut = allNames(prev?.outflows);
+
+      const addIn = toAdd.inflows.filter((x) => !haveIn.has(norm(x.category)));
+      const addOut = toAdd.outflows.filter((x) => !haveOut.has(norm(x.category)));
+
+      return {
         ...prev,
-        inflows: [...normalizeTree(prev?.inflows, "inflows"), ...toAdd.inflows],
-        outflows: [...normalizeTree(prev?.outflows, "outflows"), ...toAdd.outflows],
-      }));
-    }
+        inflows: [...normalizeTree(prev?.inflows, "inflows"), ...addIn],
+        outflows: [...normalizeTree(prev?.outflows, "outflows"), ...addOut],
+      };
+    });
+  }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startISO, endISO, txs]);
 
