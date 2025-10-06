@@ -9,16 +9,6 @@ import ExportPDFButton from "./ui/ExportPDFButton.jsx";
 import SharePDFButton from "./ui/SharePDFButton.jsx";
 import Modal from "./ui/Modal.jsx";
 
-/**
- * Visual pass:
- * - Section headers on a soft emerald tint
- * - Table thead shaded & sticky; zebra rows
- * - Sub-rows show a left guide + indent
- * - Totals & Net have subtle emphasis backgrounds
- * - Card uses a soft white→slate gradient for separation
- *
- * Behavior unchanged from previous version (persisted collapses, editor, etc.)
- */
 export default function BudgetTab({
   period,
   setPeriod,
@@ -44,6 +34,7 @@ export default function BudgetTab({
     anchorDate: coerceISO(period?.anchorDate),
   };
 
+  // normalize + keep child.type if present
   const normalizeTree = (arr, section) =>
     (Array.isArray(arr) ? arr : []).map((it) => ({
       category: it.category ?? "",
@@ -61,6 +52,9 @@ export default function BudgetTab({
             amount: 0,
             auto: !!c.auto,
             children: [],
+            ...(section === "outflows"
+              ? { type: c.type === "fixed" ? "fixed" : c.type === "variable" ? "variable" : (it.type || "variable") }
+              : {}),
           }))
         : [],
     }));
@@ -115,7 +109,7 @@ export default function BudgetTab({
     }
   };
 
-  // -------------------- period math (defensive) --------------------
+  // -------------------- period math --------------------
   const offsetStart = useMemo(() => {
     try {
       return getAnchoredPeriodStart(
@@ -124,7 +118,6 @@ export default function BudgetTab({
         new Date(),
         periodOffset
       );
-
     } catch {
       const d = new Date(safePeriod.anchorDate || todayISO);
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -304,202 +297,294 @@ export default function BudgetTab({
       return ns;
     });
 
-  // -------------------- save/delete/claim (unchanged) ------------------------
+  // -------------------- consolidation helpers --------------------
+  const consolidateParents = (rows) => {
+    const byKey = new Map();
+    for (const r of rows) {
+      const key = `${norm(r.category)}|${r.type || "variable"}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { ...r, children: [...(r.children || [])] });
+      } else {
+        const tgt = byKey.get(key);
+        // merge children (dedupe by name)
+        const childMap = new Map();
+        for (const c of [...(tgt.children || []), ...(r.children || [])]) {
+          const ck = norm(c.category);
+          if (!childMap.has(ck)) childMap.set(ck, { ...c });
+        }
+        tgt.children = [...childMap.values()];
+        // sum parent amount
+        tgt.amount = Number(tgt.amount || 0) + Number(r.amount || 0);
+        // keep auto if any is true
+        tgt.auto = !!(tgt.auto || r.auto);
+        byKey.set(key, tgt);
+      }
+    }
+    return [...byKey.values()];
+  };
+
+  const ensureParentOfType = (rows, name, desiredType) => {
+    let idx = rows.findIndex(
+      (r) => norm(r.category) === norm(name) && (r.type || "variable") === desiredType
+    );
+    if (idx === -1) {
+      rows.push({
+        category: name,
+        amount: 0,
+        auto: false,
+        children: [],
+        type: desiredType,
+      });
+      idx = rows.length - 1;
+    }
+    return idx;
+  };
+
+  // -------------------- save/delete/claim ------------------------
   const saveRow = ({ section, path, isNew }, form, scope = "none") => {
     const newName = (form.category || "").trim() || "Untitled";
     const newNorm = norm(newName);
-    const targetParent = form.parent ? form.parent.trim() : null;
+    const targetParentName = form.parent ? form.parent.trim() : null;
+    const desiredType = section === "outflows" ? (form?.type === "fixed" ? "fixed" : "variable") : undefined;
 
     const originalItem = !isNew ? getItemAtPath(section, path) : null;
     const oldName = originalItem?.category ?? "";
-    const oldNorm = norm(oldName);
     const wasSub = !isNew && path.length === 2;
-
-    const oldAmount = !isNew && !wasSub ? Number(originalItem?.amount ?? 0) : 0;
-    const newAmount = targetParent ? 0 : Number(form.amount ?? 0);
-
-    const renamed = !isNew && newNorm !== oldNorm;
-    const amountChanged = !isNew && !wasSub && oldAmount !== newAmount;
 
     const snapshot = JSON.parse(JSON.stringify(budgets));
     pushHistory();
 
+    // work on cloned array
     let arr = getArray(section);
 
-    // new row
+    // --------- CREATE NEW ---------
     if (isNew) {
-      if (!targetParent) {
-        arr = [
-          ...arr,
-          {
-            category: newName,
-            amount: newAmount,
-            auto: false,
-            children: [],
-            ...(section === "outflows" ? { type: form?.type === "fixed" ? "fixed" : "variable" } : {}),
-          },
-        ];
-      } else {
-        let pIdx = arr.findIndex((r) => norm(r.category) === norm(targetParent));
+      if (section === "outflows" && targetParentName) {
+        // add as sub with its own type; may need to move under a parent of matching type
+        // start under the selected parent (any type)
+        let pIdx = arr.findIndex((r) => norm(r.category) === norm(targetParentName));
         if (pIdx === -1) {
-          arr = [
-            ...arr,
-            {
-              category: targetParent,
-              amount: 0,
-              auto: false,
-              children: [],
-              ...(section === "outflows" ? { type: "variable" } : {}),
-            },
-          ];
+          arr.push({ category: targetParentName, amount: 0, auto: false, children: [], type: "variable" });
           pIdx = arr.length - 1;
         }
-        const clone = JSON.parse(JSON.stringify(arr));
-        if (!clone[pIdx].children) clone[pIdx].children = [];
-        clone[pIdx].children.push({
+        const parent = arr[pIdx];
+        // if parent's type doesn't match child's desired type, move to (or create) a same-named parent in that type
+        let hostIdx = pIdx;
+        if ((parent.type || "variable") !== desiredType) {
+          hostIdx = ensureParentOfType(arr, parent.category, desiredType);
+        }
+        if (!arr[hostIdx].children) arr[hostIdx].children = [];
+        arr[hostIdx].children.push({
           category: newName,
           amount: 0,
           auto: false,
           children: [],
+          ...(section === "outflows" ? { type: desiredType } : {}),
         });
-        arr = clone;
+      } else if (targetParentName) {
+        // inflows sub (no type dimension)
+        let pIdx = arr.findIndex((r) => norm(r.category) === norm(targetParentName));
+        if (pIdx === -1) {
+          arr.push({ category: targetParentName, amount: 0, auto: false, children: [] });
+          pIdx = arr.length - 1;
+        }
+        if (!arr[pIdx].children) arr[pIdx].children = [];
+        arr[pIdx].children.push({ category: newName, amount: 0, auto: false, children: [] });
+      } else {
+        // top-level
+        arr = [
+          ...arr,
+          {
+            category: newName,
+            amount: Number(form.amount ?? 0),
+            auto: false,
+            children: [],
+            ...(section === "outflows" ? { type: desiredType } : {}),
+          },
+        ];
       }
+
+      // consolidate duplicates for outflows
+      if (section === "outflows") arr = consolidateParents(arr);
+
       setArray(section, arr);
-      showUndoToast?.(
-        `Added “${newName}”`,
-        () => setBudgets(snapshot)
-      );
+      showUndoToast?.(`Added “${newName}”`, () => setBudgets(snapshot));
       setEditing(null);
       return;
     }
 
-    // edit existing
+    // --------- EDIT EXISTING ---------
     if (path.length === 2) {
+      // editing a subcategory
       const [pi, ci] = path;
       const base = JSON.parse(JSON.stringify(arr));
-      const child = base[pi].children[ci];
+      const oldParent = base[pi];
+      const child = oldParent.children[ci];
+      const oldChildType = section === "outflows" ? (child?.type || oldParent?.type || "variable") : undefined;
 
-      if (!targetParent) {
-        base[pi].children.splice(ci, 1);
-        base.push({
-          category: newName,
-          amount: newAmount,
-          auto: !!child.auto,
-          children: [],
-          ...(section === "outflows"
-            ? { type: form?.type ? (form.type === "fixed" ? "fixed" : "variable") : base[pi]?.type || "variable" }
-            : {}),
-        });
-        setArray(section, base);
-      } else {
-        base[pi].children.splice(ci, 1);
-        let pIdx = base.findIndex((r) => norm(r.category) === norm(targetParent));
-        if (pIdx === -1) {
+      // remove from old parent
+      base[pi].children.splice(ci, 1);
+
+      // decide host parent (may be same name different type)
+      let hostIdx;
+      if (targetParentName) {
+        // moving under a (possibly different) parent name
+        hostIdx = base.findIndex((r) => norm(r.category) === norm(targetParentName));
+        if (hostIdx === -1) {
           base.push({
-            category: targetParent,
+            category: targetParentName,
             amount: 0,
             auto: false,
             children: [],
             ...(section === "outflows" ? { type: "variable" } : {}),
           });
-          pIdx = base.length - 1;
+          hostIdx = base.length - 1;
         }
-        if (!base[pIdx].children) base[pIdx].children = [];
-        base[pIdx].children.push({
+      } else {
+        // promote to top-level
+        base.push({
+          category: newName,
+          amount: Number(form.amount ?? 0),
+          auto: !!child.auto,
+          children: [],
+          ...(section === "outflows" ? { type: desiredType ?? oldChildType } : {}),
+        });
+        // consolidate if outflows
+        const nextArr = section === "outflows" ? consolidateParents(base) : base;
+        setArray(section, nextArr);
+        setEditing(null);
+        showUndoToast?.(`Saved “${newName}”`, () => setBudgets(snapshot));
+        return;
+      }
+
+      // ensure type host for outflows when sub type changed
+      if (section === "outflows") {
+        const childType = desiredType ?? oldChildType;
+        // if the (named) host parent is not of childType, move under/into same-named parent in that type
+        if ((base[hostIdx].type || "variable") !== childType) {
+          hostIdx = ensureParentOfType(base, base[hostIdx].category, childType);
+        }
+        if (!base[hostIdx].children) base[hostIdx].children = [];
+        base[hostIdx].children.push({
+          category: newName,
+          amount: 0,
+          auto: !!child.auto,
+          children: [],
+          type: childType,
+        });
+        arr = consolidateParents(base);
+      } else {
+        // inflows sub
+        if (!base[hostIdx].children) base[hostIdx].children = [];
+        base[hostIdx].children.push({
           category: newName,
           amount: 0,
           auto: !!child.auto,
           children: [],
         });
-        setArray(section, base);
+        arr = base;
       }
+
+      setArray(section, arr);
     } else {
+      // editing a parent
       const base = JSON.parse(JSON.stringify(arr));
       const idx = path[0];
       const current = base[idx];
 
-      if (!targetParent) {
-        base[idx] = {
-          ...current,
-          category: newName,
-          amount: newAmount,
-          ...(section === "outflows" ? { type: form?.type === "fixed" ? "fixed" : "variable" } : {}),
-        };
-        setArray(section, base);
+      // changing type for outflow parent => cascade children & consolidate
+      if (section === "outflows") {
+        const newType = desiredType ?? (current?.type || "variable");
+        const wasType = current?.type || "variable";
+
+        if (!targetParentName) {
+          // rename/type change in place
+          base[idx] = {
+            ...current,
+            category: newName,
+            amount: Number(targetParentName ? 0 : (form.amount ?? current.amount ?? 0)),
+            type: newType,
+            children: (current.children || []).map((c) => ({ ...c, type: newType })), // cascade rule (2)
+          };
+        } else {
+          // move this parent under another (i.e., turn into a sub) – lift children to top-level under same name/type
+          const removed = base.splice(idx, 1)[0];
+          // lift children as top-level under same type as parent
+          const lifted = (removed.children || []).map((c) => ({
+            category: c.category,
+            amount: 0,
+            auto: !!c.auto,
+            children: [],
+            type: removed.type || "variable",
+          }));
+          base.push(...lifted);
+          // ensure host parent in the same type as the sub we create
+          let hostIdx = base.findIndex((r) => norm(r.category) === norm(targetParentName));
+          if (hostIdx === -1) {
+            base.push({ category: targetParentName, amount: 0, auto: false, children: [], type: "variable" });
+            hostIdx = base.length - 1;
+          }
+          if ((base[hostIdx].type || "variable") !== newType) {
+            hostIdx = ensureParentOfType(base, base[hostIdx].category, newType);
+          }
+          if (!base[hostIdx].children) base[hostIdx].children = [];
+          base[hostIdx].children.push({
+            category: newName,
+            amount: 0,
+            auto: !!removed.auto,
+            children: [],
+            type: newType,
+          });
+        }
+
+        // consolidate duplicates where name+type collide
+        arr = consolidateParents(base);
       } else {
-        const removed = base.splice(idx, 1)[0];
-        let withLift = base;
-        if (removed.children?.length) {
-          withLift = [
-            ...withLift,
-            ...removed.children.map((c) => ({
-              ...c,
-              amount: 0,
-              children: [],
-              ...(section === "outflows" ? { type: removed?.type || "variable" } : {}),
-            })),
-          ];
+        // inflows parent
+        if (!targetParentName) {
+          base[idx] = {
+            ...current,
+            category: newName,
+            amount: Number(form.amount ?? current.amount ?? 0),
+          };
+          arr = base;
+        } else {
+          const removed = base.splice(idx, 1)[0];
+          let hostIdx = base.findIndex((r) => norm(r.category) === norm(targetParentName));
+          if (hostIdx === -1) {
+            base.push({ category: targetParentName, amount: 0, auto: false, children: [] });
+            hostIdx = base.length - 1;
+          }
+          if (!base[hostIdx].children) base[hostIdx].children = [];
+          base[hostIdx].children.push({
+            category: newName,
+            amount: 0,
+            auto: !!removed.auto,
+            children: [],
+          });
+          arr = base;
         }
-        let pIdx = withLift.findIndex((r) => norm(r.category) === norm(targetParent));
-        if (pIdx === -1) {
-          withLift = [
-            ...withLift,
-            {
-              category: targetParent,
-              amount: 0,
-              auto: false,
-              children: [],
-              ...(section === "outflows" ? { type: "variable" } : {}),
-            },
-          ];
-          pIdx = withLift.length - 1;
-        }
-        if (!withLift[pIdx].children) withLift[pIdx].children = [];
-        withLift[pIdx].children.push({
-          category: newName,
-          amount: 0,
-          auto: !!removed.auto,
-          children: [],
-        });
-        setArray(section, withLift);
       }
     }
 
-    if (renamed && scope !== "none") {
-      onBulkRenameTransactions?.({
-        section,
-        oldName,
-        newName,
-        scope,
-        startISO,
-        endISO,
-      });
+    // rename transactions if requested
+    if (!isNew) {
+      const renamed = norm(oldName) !== newNorm;
+      if (renamed && scope !== "none") {
+        onBulkRenameTransactions?.({
+          section,
+          oldName,
+          newName,
+          scope,
+          startISO,
+          endISO,
+        });
+      }
     }
 
-    if (renamed) {
-      showUndoToast?.(
-        `Renamed “${oldName || "Untitled"}” → “${newName}”`,
-        () => {
-          setBudgets(snapshot);
-          if (scope !== "none")
-            onBulkRenameTransactions?.({
-              section,
-              oldName: newName,
-              newName: oldName,
-              scope,
-              startISO,
-              endISO,
-            });
-        }
-      );
-    } else if (amountChanged) {
-      showUndoToast?.(
-        `Updated “${newName}”`,
-        () => setBudgets(snapshot)
-      );
-    }
-
+    setArray(section, arr);
     setEditing(null);
+    showUndoToast?.(`Saved “${newName}”`, () => setBudgets(snapshot));
   };
 
   const deleteRow = ({ section, path, isNew }) => {
@@ -534,8 +619,31 @@ export default function BudgetTab({
     }
   };
 
+  // -------------------- type-aware table helpers --------------------
+  const outflowRowsFor = (desiredType) => {
+    const base = getArray("outflows");
+    const out = [];
+    for (const p of base) {
+      const pType = p.type || "variable";
+      const childMatches = (p.children || []).filter(
+        (c) => (c.type || pType) === desiredType
+      );
+      const parentMatches = pType === desiredType;
+      if (parentMatches || childMatches.length) {
+        out.push({
+          ...p,
+          // only show children that match the table’s type
+          children: childMatches,
+          // mark whether to show the parent’s budget amount in this table
+          __showBudget: parentMatches,
+        });
+      }
+    }
+    return out;
+  };
+
   // -------------------- section table --------------------
-  const SectionTable = ({ section, rows = [], baseRows }) => {
+  const SectionTable = ({ section, rows = [], baseRows, currentType }) => {
     const top = baseRows ?? rows;
 
     const sortedRows = useMemo(
@@ -544,7 +652,7 @@ export default function BudgetTab({
     );
 
     const tableBudgetTotal = useMemo(
-      () => (rows ?? []).reduce((s, it) => s + Number(it.amount || 0), 0),
+      () => (rows ?? []).reduce((s, it) => s + Number((it.__showBudget ? it.amount : 0) || 0), 0),
       [rows]
     );
     const tableActualTotal = useMemo(
@@ -554,8 +662,9 @@ export default function BudgetTab({
 
     const pathFor = (item, parentRef = null) => {
       if (!parentRef) {
-        const pi = top.findIndex(r => norm(r.category) === norm(item.category));
-        return [pi];
+        const pi = top.findIndex(r => norm(r.category) === norm(item.category) && (section !== "outflows" || (r.type || "variable") === (item.type || r.type || "variable")));
+        // fallback to name only if needed
+        return [pi > -1 ? pi : top.findIndex(r => norm(r.category) === norm(item.category))];
       }
       const pi = top.findIndex(r => norm(r.category) === norm(parentRef.category));
       const ci = (top[pi]?.children || []).findIndex(c => norm(c.category) === norm(item.category));
@@ -564,7 +673,7 @@ export default function BudgetTab({
 
     const renderRow = (item, depth, parentRef) => {
       const path = pathFor(item, parentRef);
-      const thisKey = `${section}:${depth}:${norm(parentRef?.category || "")}:${norm(item.category)}`;
+      const thisKey = `${section}:${currentType || "all"}:${depth}:${norm(parentRef?.category || "")}:${norm(item.category)}`;
       const isSub = depth === 1;
       const actual = actualForItem(section, item);
       const budget = Number(item.amount || 0);
@@ -632,7 +741,7 @@ export default function BudgetTab({
               </div>
             </td>
             <td className={budgetCellClass}>
-              {isSub ? "" : money(budget)}
+              {isSub ? "" : (item.__showBudget ? money(budget) : "")}
             </td>
             <td className={actualCellClass}>{money(actual)}</td>
           </tr>
@@ -688,105 +797,104 @@ export default function BudgetTab({
   return (
     <>
       <Card className="p-3 md:p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold tracking-tight">
-            {(safePeriod.type === "SemiMonthly" ? "Semi-Monthly" : safePeriod.type)} Budget
-          </h2>
-          <div className="text-[11px] md:text-xs text-gray-600">
-            {offsetStart.toDateString()} – {offsetEnd.toDateString()}
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-tight">
+              {(safePeriod.type === "SemiMonthly" ? "Semi-Monthly" : safePeriod.type)} Budget
+            </h2>
+            <div className="text-[11px] md:text-xs text-gray-600">
+              {offsetStart.toDateString()} – {offsetEnd.toDateString()}
+            </div>
+          </div>
+
+          <div className="relative">
+            <Button
+              type="button"
+              variant="ghost"
+              className="!px-2 !py-1"
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              title="More"
+            >
+              ⋯
+            </Button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-1 w-48 rounded-md border border-slate-200 bg-white shadow-md z-20">
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => {
+                    undo();
+                    setMenuOpen(false);
+                  }}
+                  disabled={!history.length}
+                >
+                  Undo
+                </button>
+                <div className="px-2 py-1.5 border-t border-slate-100">
+                  <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
+                </div>
+                <div className="px-2 py-1 border-t border-slate-100">
+                  <SharePDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
+                </div>
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                  onClick={() => {
+                    setPeriodOffset(0);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Reset to current period
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                  onClick={() => {
+                    setPeriodOpen(true);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Period settings…
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="relative">
+        {/* Period arrows (match Summary) */}
+        <div data-noswipe className="mt-2 flex items-center gap-1">
           <Button
             type="button"
             variant="ghost"
-            className="!px-2 !py-1"
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="More"
+            className="!px-2 !py-1 text-sm"
+            onPointerUp={() => setPeriodOffset((o) => o - 1)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setPeriodOffset((o) => o - 1);
+              }
+            }}
+            title="Previous"
           >
-            ⋯
+            ←
           </Button>
-          {menuOpen && (
-            <div className="absolute right-0 mt-1 w-48 rounded-md border border-slate-200 bg-white shadow-md z-20">
-              <button
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                onClick={() => {
-                  undo();
-                  setMenuOpen(false);
-                }}
-                disabled={!history.length}
-              >
-                Undo
-              </button>
-              <div className="px-2 py-1.5 border-t border-slate-100">
-                <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
-              </div>
-              <div className="px-2 py-1 border-t border-slate-100">
-                <SharePDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
-              </div>
-              <button
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                onClick={() => {
-                  setPeriodOffset(0);
-                  setMenuOpen(false);
-                }}
-              >
-                Reset to current period
-              </button>
-              <button
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                onClick={() => {
-                  setPeriodOpen(true);
-                  setMenuOpen(false);
-                }}
-              >
-                Period settings…
-              </button>
-            </div>
-          )}
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="!px-2 !py-1 text-sm"
+            onPointerUp={() => setPeriodOffset((o) => o + 1)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setPeriodOffset((o) => o + 1);
+              }
+            }}
+            title="Next"
+          >
+            →
+          </Button>
         </div>
-      </div>
-
-      {/* Period arrows (match Summary) */}
-      <div data-noswipe className="mt-2 flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          className="!px-2 !py-1 text-sm"
-          onPointerUp={() => setPeriodOffset((o) => o - 1)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setPeriodOffset((o) => o - 1);
-            }
-          }}
-          title="Previous"
-        >
-          ←
-        </Button>
-
-        <Button
-          type="button"
-          variant="ghost"
-          className="!px-2 !py-1 text-sm"
-          onPointerUp={() => setPeriodOffset((o) => o + 1)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setPeriodOffset((o) => o + 1);
-            }
-          }}
-          title="Next"
-        >
-          →
-        </Button>
-      </div>
-    </Card>
-
+      </Card>
 
       {/* MAIN CARD */}
       <Card id="budget-tab" className="p-0 overflow-hidden border border-slate-200 bg-white">
@@ -824,8 +932,9 @@ export default function BudgetTab({
         </div>
         <SectionTable
           section="outflows"
-          rows={getArray("outflows").filter((r) => (r.type || "variable") === "fixed")}
+          rows={outflowRowsFor("fixed")}
           baseRows={getArray("outflows")}
+          currentType="fixed"
         />
 
         {/* Variable outflows header */}
@@ -845,8 +954,9 @@ export default function BudgetTab({
         </div>
         <SectionTable
           section="outflows"
-          rows={getArray("outflows").filter((r) => (r.type || "variable") === "variable")}
+          rows={outflowRowsFor("variable")}
           baseRows={getArray("outflows")}
+          currentType="variable"
         />
 
         {/* Net band */}

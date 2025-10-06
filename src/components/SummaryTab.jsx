@@ -23,7 +23,6 @@ import Button from "./ui/Button.jsx"
 const toDate = (v) => {
   if (v instanceof Date) return isNaN(v) ? null : v
   if (typeof v === "string") {
-    // handle "YYYY-MM-DD" or ISO
     const d = new Date(v.length <= 10 ? v + "T00:00:00" : v)
     return isNaN(d) ? null : d
   }
@@ -43,7 +42,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
   const canAdjustPeriod = typeof setPeriodOffset === "function"
 
   // Period from shared state (synced with Budget tab)
-  // Valid types + mapping from UI labels
   const VALID_TYPES = new Set(["Monthly", "Biweekly", "Weekly", "SemiMonthly", "Annually"]);
   const normalizeType = (t) => {
     const map = { "Semi-Monthly": "SemiMonthly", Annual: "Annually" };
@@ -75,12 +73,10 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
 
   const offsetEnd = useMemo(() => {
     const raw = calcPeriodEnd(effectivePeriod.type, offsetStart)
-    // if calcPeriodEnd returns string or Date, normalize; also never allow end < start
     const d = mustDate(raw, offsetStart)
     return d.getTime() < offsetStart.getTime() ? offsetStart : d
   }, [effectivePeriod.type, offsetStart])
 
-  // If something still went wrong with dates, short-circuit to a safe UI
   const datesOkay = offsetStart instanceof Date && offsetEnd instanceof Date && !isNaN(offsetStart) && !isNaN(offsetEnd)
 
   const startISO = datesOkay ? offsetStart.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
@@ -95,15 +91,21 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
   const daysElapsed = Math.max(1, Math.round((clampedToday - offsetStart) / dayMs) + 1)
   const daysRemaining = Math.max(0, daysTotal - daysElapsed)
 
-  // --- NEW: build a set of fixed-expense categories from the budget
+  // --- UPDATED: build a fixed-expense category set from parents AND children
   const fixedCategorySet = useMemo(() => {
     const rows = (budget?.outflows || [])
     const set = new Set()
     for (const r of rows) {
-      const t = (r?.type || "").toLowerCase().trim()
-      if (t === "fixed") {
-        const c = (r?.category || "").toLowerCase().trim()
-        if (c) set.add(c)
+      const parentType = (r?.type || "").toLowerCase().trim()
+      const parentName = (r?.category || "").toLowerCase().trim()
+      if (parentType === "fixed" && parentName) {
+        // top-level fixed category transactions might reference the parent name
+        set.add(parentName)
+      }
+      for (const c of (r?.children || [])) {
+        const cType = ((c?.type ?? r?.type) || "").toLowerCase().trim()
+        const cName = (c?.category || "").toLowerCase().trim()
+        if (cName && cType === "fixed") set.add(cName)
       }
     }
     return set
@@ -121,12 +123,11 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
     [txs, startISO, endISO]
   )
 
-  // --- NEW: Summary should ignore fixed expenses
+  // Summary excludes fixed expenses
   const periodTxsForSummary = useMemo(() => {
     return periodTxs.filter((t) => !(t.type === "expense" && isFixedExpenseTx(t)))
-  }, [periodTxs])
+  }, [periodTxs, fixedCategorySet])
 
-  // Totals to date (ignoring fixed expenses for outflows)
   const inflowsTotal = useMemo(
     () => periodTxsForSummary.filter((t) => t.type === "inflow").reduce((s, t) => s + Number(t.amount || 0), 0),
     [periodTxsForSummary]
@@ -186,7 +187,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
       series.push({ date: d, cum: running })
     }
     return series
-  }, [periodTxs, offsetStart, offsetEnd])
+  }, [periodTxs, offsetStart, offsetEnd, fixedCategorySet])
 
   const topCategory = outflowByCategory[0]
   const concentration =
@@ -317,9 +318,9 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
         <Card>
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold">Top Spending Categories</h3>
-            {concentration && (
+            {topCategory && outflowsTotal > 0 && (
               <div className="text-xs text-gray-500">
-                {topCategory.category}: {concentration}
+                {topCategory.category}: {((topCategory.amount / outflowsTotal) * 100).toFixed(0)}% of outflows
               </div>
             )}
           </div>

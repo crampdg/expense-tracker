@@ -34,7 +34,7 @@ export default function BudgetEditModal({
     category: '',
     amount: '',
     parent: '', // '' => top-level
-    type: '',   // 'fixed' | 'variable' (outflows top-level only)
+    type: 'variable',   // 'fixed' | 'variable' (outflows top-level AND subs)
   })
   const [renameScope, setRenameScope] = useState('all') // default if renaming
 
@@ -42,7 +42,7 @@ export default function BudgetEditModal({
   const originalCategoryRef = useRef('')
 
   // When the modal opens or the selected row changes, re-init the form
-  const itemKey = item ? `${item.section || ''}::${item.category || ''}::${item.amount ?? ''}` : ''
+  const itemKey = item ? `${item.section || ''}::${item.category || ''}::${item.amount ?? ''}::${item?.type ?? ''}` : ''
   useEffect(() => {
     if (!open || !item) return
     originalCategoryRef.current = item.category || ''
@@ -50,14 +50,13 @@ export default function BudgetEditModal({
       category: item.category || '',
       amount: item.amount ?? '',
       parent: currentParent || '', // '' => top-level
-      type: isOutflows ? (item?.type === 'fixed' ? 'fixed' : 'variable') : '',
+      type: isOutflows ? (item?.type === 'fixed' ? 'fixed' : 'variable') : 'variable',
     })
     setRenameScope('all')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, itemKey])
 
   const parentIsSelected = !!form.parent && form.parent.trim().length > 0
-  const showTypeSelector = isOutflows && !parentIsSelected // top-level Outflows only
 
   const renamed =
     (form.category || '').trim() !== (originalCategoryRef.current || '').trim()
@@ -67,7 +66,7 @@ export default function BudgetEditModal({
       category: (form.category || '').trim() || 'Untitled',
       amount: parentIsSelected ? 0 : Number(form.amount || 0),
       parent: parentIsSelected ? form.parent : null,
-      ...(isOutflows ? { type: showTypeSelector ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined } : {}),
+      ...(isOutflows ? { type: form.type === 'fixed' ? 'fixed' : 'variable' } : {}),
     }
     const scope = renamed ? renameScope : 'none' // only ask to rename when name actually changed
     onSave?.(payload, scope)
@@ -84,7 +83,7 @@ export default function BudgetEditModal({
       category: (form.category || '').trim() || 'Untitled',
       amount: Number(form.amount || 0),
       parent: null,
-      ...(isOutflows ? { type: showTypeSelector ? (form.type === 'fixed' ? 'fixed' : 'variable') : undefined } : {}),
+      ...(isOutflows ? { type: form.type === 'fixed' ? 'fixed' : 'variable' } : {}),
     }
     onClaim?.(payload)
     onClose?.()
@@ -106,13 +105,14 @@ export default function BudgetEditModal({
       </select>
       {isOutflows && parentIsSelected ? (
         <p className="text-[11px] text-gray-500">
-          Subcategories inherit their parent’s type (Fixed/Variable).
+          If this subcategory’s type differs from its parent’s, it will be moved
+          under a same-named parent within that type (created if missing).
         </p>
       ) : null}
     </div>
   )
 
-  const TypeSelector = showTypeSelector ? (
+  const TypeSelector = isOutflows ? (
     <div className="grid grid-cols-1 gap-2">
       <label className="text-xs text-gray-600">Type</label>
       <div className="flex items-center gap-2">
@@ -138,7 +138,7 @@ export default function BudgetEditModal({
         </label>
       </div>
       <p className="text-[11px] text-gray-500">
-        Fixed = predictable, scheduled bills. Variable = everything else.
+        Applies to both parents and subcategories.
       </p>
     </div>
   ) : null
@@ -153,9 +153,9 @@ export default function BudgetEditModal({
         inputMode="decimal"
         value={form.amount}
         onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-        disabled={parentIsSelected}
+        disabled={!!form.parent}
       />
-      {parentIsSelected ? (
+      {form.parent ? (
         <p className="text-[11px] text-gray-500">
           Amount is disabled for subcategories; totals roll up to the parent.
         </p>
@@ -197,7 +197,7 @@ export default function BudgetEditModal({
           {/* Parent selector */}
           {ParentSelect}
 
-          {/* Type selector (top-level Outflows only) */}
+          {/* Type selector (parents and subs) */}
           {TypeSelector}
 
           {/* Amount (disabled when parent is set) */}
@@ -214,7 +214,7 @@ export default function BudgetEditModal({
                   Delete
                 </Button>
               ) : null}
-              {!parentIsSelected ? (
+              {!form.parent ? (
                 <Button variant="ghost" onClick={handleClaim} title="Create a transaction from this line">
                   Claim
                 </Button>
