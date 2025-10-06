@@ -316,6 +316,48 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     return sum;
   }, [txs, savingsLabel]);
 
+
+  // Normalize text for comparisons
+  const normKey = (s) => (s || "").trim().toLowerCase();
+
+  // Collect only leaf rows (children == 0), preserving original refs
+  const collectLeaves = (rows = [], bag = []) => {
+    for (const r of rows) {
+      const kids = Array.isArray(r?.children) ? r.children : [];
+      if (kids.length) collectLeaves(kids, bag);
+      else bag.push(r);
+    }
+    return bag;
+  };
+
+  // Given the full budget object, find an existing leaf named `cat`.
+  // Returns {leaf, bucket} where bucket is "fixed" | "variable" | "inflow".
+  function resolveExistingCategory(budget, cat, txType) {
+    const key = normKey(cat);
+
+    if (txType === "inflow") {
+      const inflowLeaves = collectLeaves(budget?.inflows || []);
+      const hit = inflowLeaves.find((r) => normKey(r?.category) === key);
+      if (hit) return { leaf: hit, bucket: "inflow" };
+      return null;
+    }
+
+    // expenses → search fixed leaves first, then variable leaves
+    const fixedLeaves =
+      collectLeaves(budget?.fixedOutflows || budget?.outflowsFixed || []);
+    const varLeaves =
+      collectLeaves(budget?.variableOutflows || budget?.outflowsVariable || []);
+
+    const hitFixed = fixedLeaves.find((r) => normKey(r?.category) === key);
+    if (hitFixed) return { leaf: hitFixed, bucket: "fixed" };
+
+    const hitVar = varLeaves.find((r) => normKey(r?.category) === key);
+    if (hitVar) return { leaf: hitVar, bucket: "variable" };
+
+    return null;
+  }
+
+
   // ---- Wrap inflows to auto-save (robust inflow detection) ----
   const handleAddTransaction = (t) => {
     if (!onAddTransaction) return;
@@ -324,43 +366,73 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     const rawType = (tx.type || "").toString().toLowerCase();
     const amtNum = Number(tx.amount);
 
-    if (rawType === "inflow" || rawType === "income") {
-      tx.type = "inflow";
-    } else if (rawType === "expense" || rawType === "outflow") {
-      tx.type = "expense";
-    } else {
-      tx.type = Number.isFinite(amtNum) && amtNum < 0 ? "expense" : "inflow";
-    }
+    // Normalize type
+    if (rawType === "inflow" || rawType === "income") tx.type = "inflow";
+    else if (rawType === "expense" || rawType === "outflow") tx.type = "expense";
+    else tx.type = Number.isFinite(amtNum) && amtNum < 0 ? "expense" : "inflow";
 
+    // Ensure ID
     if (!tx.id) tx.id = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+    // 🔎 Resolve the category to an existing leaf so no new row is created
+    const hit = resolveExistingCategory(budget, tx.category, tx.type);
+    if (hit?.leaf) {
+      tx.category = hit.leaf.category || tx.category;
+      tx.meta = {
+        ...(tx.meta || {}),
+        budgetRoute: { bucket: hit.bucket, category: hit.leaf.category },
+      };
+    }
+
+    // Hand off and capture the committed ID
     const committedId = onAddTransaction(tx) ?? tx.id;
 
+    // 🔁 Auto-save (only for inflows)
     if (tx.type === "inflow") {
-      const pct = Math.max(0, Math.min(1, Number(settings.autoSavePercent)));
-      const fixed = Math.max(0, Number(settings.autoSaveFixed));
+      const pct = Math.max(0, Math.min(1, Number(settings?.autoSavePercent)));
+      const fixed = Math.max(0, Number(settings?.autoSaveFixed));
       const inflowAmt = Math.max(0, Number(tx.amount) || 0);
 
-      let saveAmt = inflowAmt * (Number.isFinite(pct) ? pct : 0) + (Number.isFinite(fixed) ? fixed : 0);
+      let saveAmt =
+        inflowAmt * (Number.isFinite(pct) ? pct : 0) +
+        (Number.isFinite(fixed) ? fixed : 0);
+
       if (Number.isFinite(saveAmt) && saveAmt > 0) {
         saveAmt = Math.min(saveAmt, inflowAmt);
 
-        const outTx = {
+        // Build the auto-outflow
+        let outTx = {
           id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           date: tx.date || new Date().toISOString().slice(0, 10),
           type: "expense",
-          category: (settings.savingsLabel || "Savings").trim() || "Savings",
-          amount: saveAmt,
+          category: (settings?.savingsLabel || "Savings").trim() || "Savings",
+          amount: saveAmt, // keep positive; your expense handler should interpret as outflow
           note: tx.note ? `${tx.note} → auto-saved` : "Auto-saved from inflow",
-          meta: { autoSaved: true, pairOf: committedId, sourceCategory: tx.category || null },
+          meta: {
+            autoSaved: true,
+            pairOf: committedId,
+            sourceCategory: tx.category || null,
+          },
         };
 
+        // 🔎 Resolve Savings too, so it hits an existing leaf if present
+        const outHit = resolveExistingCategory(budget, outTx.category, "expense");
+        if (outHit?.leaf) {
+          outTx.category = outHit.leaf.category || outTx.category;
+          outTx.meta = {
+            ...(outTx.meta || {}),
+            budgetRoute: { bucket: outHit.bucket, category: outHit.leaf.category },
+          };
+        }
+
+        // Queue after the inflow is saved
         setTimeout(() => onAddTransaction(outTx), 0);
       }
     }
 
     return committedId;
   };
+
 
   // ---- Planned & actuals this period ----
   const plannedInflows = useMemo(() => (budget?.inflows || []).reduce((s, i) => s + (Number(i.amount) || 0), 0), [budget]);
@@ -701,7 +773,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
         <MoneyTimeModal
           open={showMoneyTime}
           onClose={() => setShowMoneyTime(false)}
-          onSave={onAddTransaction}
+          onSave={FileSystemDirectoryHandleAddTransaction}
           categories={categories}
         />
       )}
