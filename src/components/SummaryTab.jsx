@@ -95,93 +95,53 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
   const daysElapsed = Math.max(1, Math.round((clampedToday - offsetStart) / dayMs) + 1)
   const daysRemaining = Math.max(0, daysTotal - daysElapsed)
 
-  // Period transactions
+  // --- NEW: build a set of fixed-expense categories from the budget
+  const fixedCategorySet = useMemo(() => {
+    const rows = (budget?.outflows || [])
+    const set = new Set()
+    for (const r of rows) {
+      const t = (r?.type || "").toLowerCase().trim()
+      if (t === "fixed") {
+        const c = (r?.category || "").toLowerCase().trim()
+        if (c) set.add(c)
+      }
+    }
+    return set
+  }, [budget])
+
+  const isFixedExpenseTx = (tx) => {
+    if (!tx || tx.type !== "expense") return false
+    const cat = (tx.category || "").toLowerCase().trim()
+    return fixedCategorySet.has(cat)
+  }
+
+  // Period transactions (all)
   const periodTxs = useMemo(
     () => txs.filter((t) => t?.date && t.date >= startISO && t.date <= endISO),
     [txs, startISO, endISO]
   )
 
-  // Totals to date
+  // --- NEW: Summary should ignore fixed expenses
+  const periodTxsForSummary = useMemo(() => {
+    return periodTxs.filter((t) => !(t.type === "expense" && isFixedExpenseTx(t)))
+  }, [periodTxs])
+
+  // Totals to date (ignoring fixed expenses for outflows)
   const inflowsTotal = useMemo(
-    () => periodTxs.filter((t) => t.type === "inflow").reduce((s, t) => s + Number(t.amount || 0), 0),
-    [periodTxs]
+    () => periodTxsForSummary.filter((t) => t.type === "inflow").reduce((s, t) => s + Number(t.amount || 0), 0),
+    [periodTxsForSummary]
   )
   const outflowsTotal = useMemo(
-    () => periodTxs.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0),
-    [periodTxs]
+    () => periodTxsForSummary.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0),
+    [periodTxsForSummary]
   )
   const net = inflowsTotal - outflowsTotal
   const savingsRate = inflowsTotal > 0 ? net / inflowsTotal : 0
 
-  // Budgeted totals (if provided)
-  const plannedInflows = useMemo(
-    () => (budget?.inflows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0),
-    [budget]
-  )
-  const plannedOutflows = useMemo(
-    () => (budget?.outflows || []).reduce((s, r) => s + (Number(r.amount) || 0), 0),
-    [budget]
-  )
-
-  // Projection
-  const projection = useMemo(() => {
-    if (!isCurrentPeriod) return null
-
-    const dailyInflow = inflowsTotal / Math.max(1, daysElapsed)
-
-    const hasInflowBudget = plannedInflows > 0
-    const remainingBudgetedInflows = Math.max(0, plannedInflows - inflowsTotal)
-    const projectedInflowsRemaining = hasInflowBudget ? remainingBudgetedInflows : dailyInflow * daysRemaining
-
-    const investCatName = "investments"
-
-    const plannedInvestOutflow = (budget?.outflows || []).reduce((s, r) => {
-      const cat = (r.category || "").toLowerCase().trim()
-      return s + (cat === investCatName ? (Number(r.amount) || 0) : 0)
-    }, 0)
-
-    const investSpentToDate = periodTxs.reduce((s, t) => {
-      if (t.type !== "expense") return s
-      const cat = (t.category || "").toLowerCase().trim()
-      return s + (cat === investCatName ? (Number(t.amount) || 0) : 0)
-    }, 0)
-
-    const remainingBudgetedInvestOut = Math.max(0, plannedInvestOutflow - investSpentToDate)
-
-    const outflowsNonInvestToDate = outflowsTotal - investSpentToDate
-    const dailyOutflowNonInvest = outflowsNonInvestToDate / Math.max(1, daysElapsed)
-    const projectedNonInvestOutRemaining = dailyOutflowNonInvest * daysRemaining
-
-    const projectedOutflowsRemaining = projectedNonInvestOutRemaining + remainingBudgetedInvestOut
-    const projectedNetEnd = net + projectedInflowsRemaining - projectedOutflowsRemaining
-
-    return {
-      projectedNetEnd,
-      projectedInflowsRemaining,
-      projectedOutflowsRemaining,
-      remainingBudgetedInflows,
-      remainingBudgetedInvestOut,
-      clampApplied: {
-        inflows: hasInflowBudget && inflowsTotal >= plannedInflows,
-        investments: plannedInvestOutflow > 0 && investSpentToDate >= plannedInvestOutflow,
-      },
-    }
-  }, [
-    isCurrentPeriod,
-    inflowsTotal,
-    outflowsTotal,
-    daysElapsed,
-    daysRemaining,
-    plannedInflows,
-    budget?.outflows,
-    net,
-    periodTxs,
-  ])
-
-  // Top spending categories
+  // Top spending categories (ignoring fixed)
   const outflowByCategory = useMemo(() => {
     const m = {}
-    for (const t of periodTxs) {
+    for (const t of periodTxsForSummary) {
       if (t.type !== "expense") continue
       const cat = (t.category ?? "Uncategorized") || "Uncategorized"
       m[cat] = (m[cat] || 0) + Number(t.amount || 0)
@@ -190,16 +150,17 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5)
-  }, [periodTxs])
+  }, [periodTxsForSummary])
 
+  // Recent activity (ignoring fixed)
   const recentTxs = useMemo(() => {
-    const sorted = [...periodTxs].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    const filtered = periodTxsForSummary
+    const sorted = [...filtered].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     return sorted.slice(0, 5)
-  }, [periodTxs])
+  }, [periodTxsForSummary])
 
-  // Cashflow timeline (cumulative net)
+  // Cashflow timeline (cumulative net), ignoring fixed expenses
   const cashflowSeries = useMemo(() => {
-    // guard against nonsense date ranges
     const start = offsetStart
     const end = offsetEnd
     if (!(start instanceof Date) || !(end instanceof Date) || isNaN(start) || isNaN(end)) return []
@@ -211,6 +172,9 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
     for (const tx of periodTxs) {
       const d = tx.date
       if (!daily.has(d)) continue
+      // Skip fixed expense transactions entirely
+      if (tx.type === "expense" && isFixedExpenseTx(tx)) continue
+
       const delta = tx.type === "inflow" ? Number(tx.amount || 0) : -Number(tx.amount || 0)
       daily.set(d, (daily.get(d) || 0) + delta)
     }
@@ -332,7 +296,7 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
       <Card>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">Cashflow Timeline</h3>
-          <div className="text-xs text-gray-500">Cumulative net by day</div>
+          <div className="text-xs text-gray-500">Cumulative net by day (fixed expenses excluded)</div>
         </div>
         <div data-noswipe>
           <ResponsiveContainer width="100%" height={220}>
@@ -369,31 +333,6 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </Card>
-      )}
-
-      {/* Projection (current period only) */}
-      {isCurrentPeriod && projection && (
-        <Card>
-          <h3 className="font-semibold mb-1">Projection</h3>
-          <p className="text-sm text-gray-700">
-            By period end you’re on pace for{" "}
-            <span
-              className={
-                projection.projectedNetEnd >= 0
-                  ? "text-green-600 font-medium"
-                  : "text-red-600 font-medium"
-              }
-            >
-              {money(projection.projectedNetEnd)}
-            </span>
-            .
-          </p>
-          {plannedInflows > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              Inflows capped at budget (remaining {money(projection.remainingBudgetedInflows)}); outflows projected by current pace.
-            </p>
-          )}
         </Card>
       )}
 
