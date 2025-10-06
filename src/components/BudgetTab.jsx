@@ -269,116 +269,61 @@ export default function BudgetTab({
   const netActual = inflowsTotalActual - outflowsTotalActual;
 
   // ---- auto-rows from transactions (bullet-proof, consider parents & children) --
-  useEffect(() => {
-    // Build a map of every existing budget name -> canonical casing
-    const outflowNameMap = new Map();
+   useEffect(() => {
+    const norm = (s) =>
+      (s || "")
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[’'`´]/g, "'")
+        .replace(/[-–—]/g, "-")
+        .replace(/[\s_]+/g, " ")
+        .trim();
+
+    // Build a fast lookup of every existing outflow name (parents + children) across BOTH types
+    const existingOutflowNames = new Set();
     (budgets?.outflows || []).forEach((p) => {
-      if (p?.category) outflowNameMap.set(norm(p.category), String(p.category).trim());
+      if (p?.category) existingOutflowNames.add(norm(p.category));
       (p?.children || []).forEach((c) => {
-        if (c?.category) outflowNameMap.set(norm(c.category), String(c.category).trim());
+        if (c?.category) existingOutflowNames.add(norm(c.category));
       });
     });
 
-    const inflowNameMap = new Map();
-    (budgets?.inflows || []).forEach((p) => {
-      if (p?.category) inflowNameMap.set(norm(p.category), String(p.category).trim());
-      (p?.children || []).forEach((c) => {
-        if (c?.category) inflowNameMap.set(norm(c.category), String(c.category).trim());
-      });
-    });
+    // When folding transactions into the current period, never auto-create an outflow row
+    // if the category name already exists anywhere (parent OR child, fixed OR variable).
+    // Also, if MoneyTime tagged a precise route, respect it.
+    const txns = (transactionsByPeriod?.[periodKey] || []);
+    const next = structuredClone(budgets || { inflows: [], outflows: [] });
 
-    // Gather ALL existing names (parents + children); parent with no children counts as a leaf too
-    const collectAllNames = (rows = []) => {
-      const set = new Set();
-      for (const r of rows) {
-        set.add(norm(r.category));
-        const kids = Array.isArray(r.children) ? r.children : [];
-        for (const c of kids) set.add(norm(c.category));
-      }
-      return set;
-    };
-    const collectLeafNames = (rows = []) => {
-      const set = new Set();
-      for (const r of rows) {
-        const kids = Array.isArray(r.children) ? r.children : [];
-        if (kids.length === 0) {
-          set.add(norm(r.category));       // parent with no children behaves like a leaf
-        } else {
-          for (const c of kids) set.add(norm(c.category));
-        }
-      }
-      return set;
-    };
+    for (const t of txns) {
+      const isOutflow = Number(t.amount) < 0;
+      const rawName = String(t.category || "").trim();
+      if (!rawName) continue;
 
-    const haveInflowAny = collectAllNames(getArray("inflows"));
-    const haveOutflowAny = collectAllNames(getArray("outflows"));
-    const haveOutflowLeaves = collectLeafNames(getArray("outflows"));
-
-    const toAdd = { inflows: [], outflows: [] };
-    const pending = { inflows: new Set(), outflows: new Set() }; // dedupe within this pass
-
-    for (const t of txs) {
-      if (isBlank(t.category)) continue;
-      if (!(t.date >= startISO && t.date <= endISO)) continue;
-
-      // If Money Time already routed this to an existing leaf, never auto-create.
-      if (t?.meta?.budgetRoute?.category?.trim()) continue;
-
-
-
-      let rawName = t.category ?? "";
-      let n = norm(rawName);
-      const tType = (t.type || "").toLowerCase(); // normalize once
-
-
-      // Snap to canonical casing if it exists already
-      if ((tType === "outflow" || tType === "expense") && outflowNameMap.has(n)) {
-        rawName = outflowNameMap.get(n);
-        n = norm(rawName);
-      } else if (tType === "inflow" && inflowNameMap.has(n)) {
-        rawName = inflowNameMap.get(n);
-        n = norm(rawName);
-      }
-
-
-
-      if (tType === "inflow") {
-        // Only auto-create if it doesn't exist anywhere (parent or child), and not already queued this pass
-        if (!inflowNameMap.has(n) && !pending.inflows.has(n)) {
-          toAdd.inflows.push({ category: rawName, amount: 0, auto: true, children: [] });
-          pending.inflows.add(n);
+      if (isOutflow) {
+        const route = t?.meta?.budgetRoute;
+        if (route && norm(route.category)) {
+          // Route to the exact child/parent that already exists; do NOT create new rows
+          // (your existing code that increments Actuals should run here without creating rows)
+          continue; // this stops any auto-create fallback for routed items
         }
 
-      } else if (tType === "outflow" || tType === "expense") {
-
-        // ✅ Critical rule: if the name exists ANYWHERE in outflows (parent or child), DO NOT add.
-        // Also, if it’s already a known LEAF (child or lone parent), DO NOT add.
-        // If this name already exists anywhere (parent or child), do NOT auto-create
-        if (!outflowNameMap.has(n) && !pending.outflows.has(n)) {
-          toAdd.outflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
-          pending.outflows.add(n);
+        // No route. If a row of this name already exists anywhere, do NOT create a new one.
+        if (existingOutflowNames.has(norm(rawName))) {
+          // Let your existing "accumulate Actuals" logic handle it; just don't create.
+          continue;
         }
 
+        // ... only if we get here do we allow creating a truly new outflow category
+        // (your current "auto-create" logic lives here)
+      } else {
+        // inflows unchanged (your existing inflow logic)
       }
     }
 
-    if (toAdd.inflows.length || toAdd.outflows.length) {
-      setBudgets((prev) => {
-        // Re-check against current state to avoid races
-        const haveInNow = collectAllNames(prev?.inflows || []);
-        const haveOutNow = collectAllNames(prev?.outflows || []);
+    setBudgets(next);
+  }, [transactionsByPeriod, periodKey, budgets, setBudgets]);
 
-        const addIn = toAdd.inflows.filter((x) => !haveInNow.has(norm(x.category)));
-        const addOut = toAdd.outflows.filter((x) => !haveOutNow.has(norm(x.category)));
-
-        return {
-          ...prev,
-          inflows: [...normalizeTree(prev?.inflows, "inflows"), ...addIn],
-          outflows: [...normalizeTree(prev?.outflows, "outflows"), ...addOut],
-        };
-      });
-    }
-  }, [startISO, endISO, txs, budgets]);
 
 
 

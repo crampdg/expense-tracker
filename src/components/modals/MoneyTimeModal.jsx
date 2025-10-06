@@ -49,33 +49,54 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
     setForm(f => ({ ...f, [field]: value }))
   }
 
-  const handleSave = () => {
-    const cleanForm = {
-      ...form,
-      amount: Number(form.amount) || 0,   // ensure numeric
-    };
-
-    // If user typed a name that already exists (case-insensitive, trimmed),
-    // snap to its canonical casing and tag budgetRoute so BudgetTab skips auto-create.
-    const typed = (cleanForm.category || '').trim();
-    const exists = categories.some((c) => norm(c) === norm(typed));
-    if (typed && exists) {
-      const snapped = snapToKnownCategory(typed, categories);
-      const finalForm = {
-        ...cleanForm,
-        category: snapped,
-        meta: {
-          ...(cleanForm.meta || {}),
-          budgetRoute: { category: snapped },
-        },
-      };
-      onSave(finalForm);
-    } else {
-      onSave(cleanForm);
+  // Build a canonical map of ALL existing budget names (parents + children, fixed + variable)
+  const nameMap = new Map(); // norm(name) -> { category, isChild, parentCategory, type }
+  (budgets?.outflows || []).forEach((p) => {
+    if (p?.category) {
+      nameMap.set(norm(p.category), {
+        category: String(p.category).trim(),
+        isChild: false,
+        parentCategory: null,
+        type: p?.type || "variable",
+      });
     }
+    (p?.children || []).forEach((c) => {
+      if (c?.category) {
+        nameMap.set(norm(c.category), {
+          category: String(c.category).trim(),
+          isChild: true,
+          parentCategory: String(p.category || "").trim() || null,
+          // child type inherits its own type, else parent’s type, default variable
+          type: c?.type || p?.type || "variable",
+        });
+      }
+    });
+  });
 
+  const typed = (cleanForm.category || "").trim();
+  const hit = nameMap.get(norm(typed));
+
+  if (typed && hit) {
+    // Snap to canonical casing and attach a precise route
+    const snapped = hit.category;
+    const finalForm = {
+      ...cleanForm,
+      category: snapped,
+      meta: {
+        ...(cleanForm.meta || {}),
+        budgetRoute: {
+          category: snapped,
+          isChild: !!hit.isChild,
+          parentCategory: hit.parentCategory,
+          type: hit.type, // "fixed" | "variable"
+        },
+      },
+    };
+    onSave(finalForm);
     onClose();
+    return;
   }
+
 
 
 
