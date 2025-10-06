@@ -759,7 +759,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
       {/* ==== Variable Spend Warnings (replaces Recent Transactions) ==== */}
       <div className="rounded-2xl border border-amber-200 bg-amber-50/70 shadow-sm">
         <div className="px-4 py-3 flex items-center justify-between">
-          <div className="text-sm font-semibold text-amber-900">Variable Spend Warnings</div>
+          <div className="text-sm font-semibold text-amber-900">Warnings</div>
           <div className="text-xs text-amber-800/90">Period: {startISO} → {endISO}</div>
         </div>
 
@@ -775,7 +775,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-amber-900 truncate">{w.category}</div>
                     <div className="text-sm opacity-80">
-                      Projected: {fmtMoney(w.projected)} (/ {fmtMoney(w.budgeted)}).
+                      Projected: {fmtMoney(w.projected)} / {fmtMoney(w.budgeted)}
                     </div>
                     <div className="text-sm mt-1">
                       {Number.isFinite(w.projected) && (
