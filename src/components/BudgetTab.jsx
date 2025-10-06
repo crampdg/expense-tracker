@@ -743,51 +743,53 @@ export default function BudgetTab({
   };
 
   const claimRow = ({ section, path, isNew }, form) => {
-    // Only claim for top-level rows (subs can’t be claimed directly)
-    if (path?.length === 2) return;
+    const isSub = Array.isArray(path) && path.length === 2;
 
-    // Compute the amount to claim BEFORE mutating state, so we don't read stale data.
-    // Prefer the form amount; fall back to current row amount if form is empty.
+    // Read current row and compute amount/category BEFORE any mutations
     const current = getItemAtPath(section, path) || {};
-    const amountToClaim = Number(
-      (form?.amount ?? current?.amount ?? 0) || 0
-    );
     const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
+    const amountToClaim = Number(
+      (form?.amount !== undefined && form?.amount !== null && form?.amount !== "")
+        ? form.amount
+        : (current?.amount ?? 0)
+    );
 
-    // 1) Impact wallet right away
-    onClaim?.({
-      section,
-      category: categoryName,
-      amount: amountToClaim,
-      source: "budget-claim"
-    });
+    // For top-level only: impact wallet first
+    if (!isSub) {
+      onClaim?.({
+        section,
+        category: categoryName,
+        amount: amountToClaim,
+        source: "budget-claim",
+      });
+    }
 
-    // 2) Save the row (this can update the label/amount, but claim already happened)
+    // Save (updates name/amount/type as usual)
     saveRow(
       { section, path, isNew },
       { category: form.category, amount: form.amount, parent: null, type: form?.type },
       "none"
     );
 
-    // 3) Navigate to Wallet using several fallbacks
-    try {
-      window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } }));
-    } catch {}
-    try {
-      if (typeof window !== "undefined") {
-        // hash-based
-        window.location.hash = "#wallet";
-        // query-based (in case your app reads ?tab=)
-        const u = new URL(window.location.href);
-        u.searchParams.set("tab", "wallet");
-        window.history.replaceState(null, "", u.toString());
-      }
-    } catch {}
-    try {
-      // click a bottom-nav button if present
-      const el = document.querySelector('[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet');
-      if (el) el.click();
-    } catch {}
+    // Ensure the editor closes even if saveRow bails early for any reason
+    try { setEditing(null); } catch {}
+
+    // Navigate to Wallet only for top-level
+    if (!isSub) {
+      try { window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } })); } catch {}
+      try {
+        if (typeof window !== "undefined") {
+          window.location.hash = "#wallet";
+          const u = new URL(window.location.href);
+          u.searchParams.set("tab", "wallet");
+          window.history.replaceState(null, "", u.toString());
+        }
+      } catch {}
+      try {
+        const el = document.querySelector('[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet');
+        if (el) el.click();
+      } catch {}
+    }
   };
 
 
