@@ -891,8 +891,9 @@ export default function BudgetTab({
               </div>
             </td>
             <td className={budgetCellClass}>
-              {isSub ? "" : (item.__showBudget ? money(budget) : "")}
+              {isSub ? "" : (section === "inflows" ? money(budget) : (item.__showBudget ? money(budget) : ""))}
             </td>
+
             <td className={actualCellClass}>{money(actual)}</td>
           </tr>
 
