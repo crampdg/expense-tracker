@@ -744,11 +744,20 @@ export default function BudgetTab({
     const current = getItemAtPath(section, path) || {};
     const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
 
-    const amountToClaim = Number(
+    let amountToClaim = Number(
       (form?.amount !== undefined && form?.amount !== null && form?.amount !== "")
         ? form.amount
         : (current?.amount ?? 0)
     );
+    // If claiming a subcategory, default to the parent's budget (children are 0 by design)
+    if (section === "outflows" && path.length === 2) {
+      const parent = getArray("outflows")[path[0]];
+      const parentAmt = Number(parent?.amount ?? 0);
+      if (!Number.isFinite(amountToClaim) || amountToClaim <= 0) {
+        amountToClaim = parentAmt;
+      }
+    }
+
 
     const todayISO = new Date().toISOString().slice(0, 10);
     const txType = section === "inflows" ? "inflow" : "expense";
@@ -778,22 +787,38 @@ export default function BudgetTab({
     // Close editor ASAP
     try { setEditing(null); } catch {}
 
-    // Navigate hard to Wallet
+    // Navigate hard to Wallet (robust, with retries)
     try { window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } })); } catch {}
     try {
       if (typeof window !== "undefined") {
         window.location.hash = "#wallet";
-        const u = new URL(window.location.href);
-        u.searchParams.set("tab", "wallet");
-        window.history.replaceState(null, "", u.toString());
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
       }
     } catch {}
     try {
-      const el = document.querySelector(
-        '[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet, a[href="#wallet"], [data-route="wallet"]'
-      );
-      if (el) el.click();
+      const selectors = [
+        '[data-tab="wallet"]',
+        '[aria-controls="wallet"]',
+        '#tab-wallet',
+        'a[href="#wallet"]',
+        '[data-route="wallet"]',
+        'nav [aria-label="Wallet"]',
+        '[data-nav="wallet"]',
+        '#wallet'
+      ];
+      const clickAny = () => {
+        for (const s of selectors) {
+          const el = document.querySelector(s);
+          if (el) { el.click(); return true; }
+        }
+        return false;
+      };
+      if (!clickAny()) {
+        setTimeout(clickAny, 120);
+        setTimeout(clickAny, 320);
+      }
     } catch {}
+
 
     // Re-signal after navigation (Wallet may now be mounted)
     try {
@@ -864,9 +889,19 @@ export default function BudgetTab({
         // fallback to name only if needed
         return [pi > -1 ? pi : top.findIndex(r => norm(r.category) === norm(item.category))];
       }
-      const pi = top.findIndex(r => norm(r.category) === norm(parentRef.category));
+      const desiredParentType = section === "outflows" ? (currentType || parentRef?.type || "variable") : undefined;
+      let pi = -1;
+      if (section === "outflows") {
+        pi = top.findIndex(r => norm(r.category) === norm(parentRef.category) && (r.type || "variable") === desiredParentType);
+        if (pi === -1) {
+          pi = top.findIndex(r => norm(r.category) === norm(parentRef.category));
+        }
+      } else {
+        pi = top.findIndex(r => norm(r.category) === norm(parentRef.category));
+      }
       const ci = (top[pi]?.children || []).findIndex(c => norm(c.category) === norm(item.category));
       return [pi, ci];
+
     };
 
     const renderRow = (item, depth, parentRef) => {

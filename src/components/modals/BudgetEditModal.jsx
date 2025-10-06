@@ -250,11 +250,10 @@ export default function BudgetEditModal({
                   Delete
                 </Button>
               ) : null}
-              {!form.parent ? (
-                <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();handleClaim();}} title="Create a transaction from this line">
-                  Claim
-                </Button>
-              ) : null}
+              <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();handleClaim();}} title="Create a transaction from this line">
+                Claim
+              </Button>
+
             </div>
             <div className="flex items-center gap-2">
               <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();onClose();}}>Cancel</Button>
