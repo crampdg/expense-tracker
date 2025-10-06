@@ -775,18 +775,11 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-amber-900 truncate">{w.category}</div>
                     <div className="text-sm opacity-80">
-                      On pace for {fmtMoney(w.projected)} (budget {fmtMoney(w.budgeted)}; over by {fmtMoney(w.overBy)}).
+                      On pace for {fmtMoney(w.projected)} (budget {fmtMoney(w.budgeted)}).
                     </div>
                     <div className="text-sm mt-1">
-                      {w.canRecover
-                        ? (<strong>Wait ~{w.waitDays} day{w.waitDays === 1 ? "" : "s"}</strong>)
-                        : (<strong>STOP SPENDING</strong>)
-                      }
                       {Number.isFinite(w.projected) && (
                         <> — Max next purchase now: <strong>{fmtMoney(w.nextMaxNow)}</strong></>
-                      )}
-                      {w?.driver && Number.isFinite(w.projected) && (
-                        <> — Driver: <strong>{(typeof restoreCase === "function" ? restoreCase(w.driver.name) : w.driver.name)}</strong> on pace for {fmtMoney(w.driver.projected)} (spent {fmtMoney(w.driver.spent)}).</>
                       )}
                     </div>
 
