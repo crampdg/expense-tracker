@@ -296,7 +296,8 @@ export default function BudgetTab({
     const next = structuredClone(budgets || { inflows: [], outflows: [] });
 
     for (const t of txns) {
-      const isOutflow = (t.type === "expense");
+      const rawType = String(t.type || "").toLowerCase();
+      const isOutflow = rawType ? rawType === "expense" : Number(t.amount) < 0;
 
       const rawName = String(t.category || "").trim();
       if (!rawName) continue;
@@ -315,8 +316,24 @@ export default function BudgetTab({
           continue;
         }
 
+        // Before allowing a new outflow row, bail if this name already exists anywhere.
+        const existsAnywhere = (() => {
+          const n = norm(rawName);
+          for (const p of next.outflows || []) {
+            if (norm(p.category) === n) return true;
+            for (const c of p.children || []) {
+              if (norm(c.category) === n) return true;
+            }
+          }
+          return false;
+        })();
+        if (existsAnywhere) {
+          // We already have this name (as parent or child). Just let Actuals roll up; do NOT create a new row.
+          continue;
+        }
         // ... only if we get here do we allow creating a truly new outflow category
         // (your current "auto-create" logic lives here)
+
       } else {
         // inflows unchanged (your existing inflow logic)
       }
