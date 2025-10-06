@@ -108,15 +108,21 @@ export default function BudgetEditModal({
   }
 
   const handleClaim = () => {
+    const fallback = Number(item?.amount ?? 0);
+    const amt = (form.amount !== '' && form.amount !== null && form.amount !== undefined)
+      ? Number(form.amount)
+      : fallback;
+
     const payload = {
       category: (form.category || '').trim() || 'Untitled',
-      amount: Number(form.amount || 0),
+      amount: Math.max(0, amt),
       parent: null,
       ...(isOutflows ? { type: form.type === 'fixed' ? 'fixed' : 'variable' } : {}),
-    }
-    onClaim?.(payload)
-    onClose?.()
+    };
+    onClaim?.(payload);
+    onClose?.();
   }
+
 
   // --------- UI helpers ----------
   const ParentSelect = (

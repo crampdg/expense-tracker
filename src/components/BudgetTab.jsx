@@ -738,54 +738,65 @@ export default function BudgetTab({
   };
 
   const claimRow = ({ section, path, isNew }, form) => {
-    const isSub = Array.isArray(path) && path.length === 2;
+  const current = getItemAtPath(section, path) || {};
+  const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
 
-    // Read current row and compute amount/category BEFORE any mutations
-    const current = getItemAtPath(section, path) || {};
-    const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
-    const amountToClaim = Number(
-      (form?.amount !== undefined && form?.amount !== null && form?.amount !== "")
-        ? form.amount
-        : (current?.amount ?? 0)
-    );
+  const amountToClaim = Number(
+    (form?.amount !== undefined && form?.amount !== null && form?.amount !== "")
+      ? form.amount
+      : (current?.amount ?? 0)
+  );
 
-    // For top-level only: impact wallet first
-    if (!isSub) {
-      onClaim?.({
-        section,
-        category: categoryName,
-        amount: amountToClaim,
-        source: "budget-claim",
-      });
-    }
+  // Build a full Wallet transaction (positive amount; Wallet interprets type)
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const txType = section === "inflows" ? "inflow" : "expense";
+  const bucket =
+    section === "outflows"
+      ? ((current?.type || form?.type || "variable") === "fixed" ? "fixed" : "variable")
+      : "inflow";
 
-    // Save (updates name/amount/type as usual)
+  const tx = {
+    id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    date: todayISO,
+    type: txType,
+    category: categoryName,
+    amount: Math.max(0, amountToClaim || 0),
+    note: "Claimed from Budget",
+    ...(txType === "expense"
+      ? { meta: { budgetRoute: { bucket, category: categoryName } } }
+      : {}),
+  };
+
+  // Send to parent if wired, and also emit a fallback event WalletTab listens for
+  try { onClaim?.(tx); } catch {}
+  try { window.dispatchEvent(new CustomEvent("bleh:budget-claim", { detail: tx })); } catch {}
+
+  // Save any edits (non-blocking)
+  try {
     saveRow(
       { section, path, isNew },
       { category: form.category, amount: form.amount, parent: null, type: form?.type },
       "none"
     );
+  } catch {}
 
-    // Ensure the editor closes even if saveRow bails early for any reason
-    try { setEditing(null); } catch {}
-
-    // Navigate to Wallet only for top-level
-    if (!isSub) {
-      try { window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } })); } catch {}
-      try {
-        if (typeof window !== "undefined") {
-          window.location.hash = "#wallet";
-          const u = new URL(window.location.href);
-          u.searchParams.set("tab", "wallet");
-          window.history.replaceState(null, "", u.toString());
-        }
-      } catch {}
-      try {
-        const el = document.querySelector('[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet');
-        if (el) el.click();
-      } catch {}
+  // Close & navigate to Wallet
+  try { setEditing(null); } catch {}
+  try { window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } })); } catch {}
+  try {
+    if (typeof window !== "undefined") {
+      window.location.hash = "#wallet";
+      const u = new URL(window.location.href);
+      u.searchParams.set("tab", "wallet");
+      window.history.replaceState(null, "", u.toString());
     }
-  };
+  } catch {}
+  try {
+    const el = document.querySelector('[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet');
+    if (el) el.click();
+  } catch {}
+};
+
 
 
   // -------------------- type-aware table helpers --------------------

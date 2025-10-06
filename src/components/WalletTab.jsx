@@ -470,6 +470,22 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
     return committedId;
   };
+  
+  // Fallback wire-up: accept budget claim events and add the transaction
+  useEffect(() => {
+    const handler = (e) => {
+      const tx = e?.detail;
+      if (!tx) return;
+      try {
+        // Use parent’s adder if available; otherwise rely on Wallet’s own handler
+        if (typeof onAddTransaction === "function") onAddTransaction(tx);
+        else handleAddTransaction(tx);
+      } catch {}
+    };
+    window.addEventListener("bleh:budget-claim", handler);
+    return () => window.removeEventListener("bleh:budget-claim", handler);
+  }, [onAddTransaction]);
+
 
 
   // ---- Planned & actuals this period ----
