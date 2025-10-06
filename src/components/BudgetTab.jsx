@@ -342,7 +342,8 @@ export default function BudgetTab({
         };
       });
     }
-  }, [startISO, endISO, txs]);
+  }, [startISO, endISO, txs, budgets]);
+
 
 
 

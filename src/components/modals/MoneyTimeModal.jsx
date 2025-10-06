@@ -2,6 +2,28 @@ import Modal from '../ui/Modal.jsx'
 import Button from '../ui/Button.jsx'
 import { useState, useEffect } from 'react'
 
+const norm = (s) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width
+    .replace(/[’'`´]/g, "'")               // apostrophes
+    .replace(/[-–—]/g, '-')                // dashes
+    .replace(/[\s_]+/g, ' ')               // collapse spaces/underscores
+    .trim();
+
+const snapToKnownCategory = (name, list = []) => {
+  const n = norm(name);
+  if (!n) return '';
+  const map = new Map();
+  for (const c of list) {
+    const k = norm(c);
+    if (!map.has(k)) map.set(k, c); // keep first exact casing from list
+  }
+  return map.get(n) || name.trim();
+};
+
+
 export default function MoneyTimeModal({ open, onClose, onSave, categories = [] }) {
   const [form, setForm] = useState({
     type: 'expense',
@@ -31,10 +53,30 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
     const cleanForm = {
       ...form,
       amount: Number(form.amount) || 0,   // ensure numeric
+    };
+
+    // If user typed a name that already exists (case-insensitive, trimmed),
+    // snap to its canonical casing and tag budgetRoute so BudgetTab skips auto-create.
+    const typed = (cleanForm.category || '').trim();
+    const exists = categories.some((c) => norm(c) === norm(typed));
+    if (typed && exists) {
+      const snapped = snapToKnownCategory(typed, categories);
+      const finalForm = {
+        ...cleanForm,
+        category: snapped,
+        meta: {
+          ...(cleanForm.meta || {}),
+          budgetRoute: { category: snapped },
+        },
+      };
+      onSave(finalForm);
+    } else {
+      onSave(cleanForm);
     }
-    onSave(cleanForm)
-    onClose()
+
+    onClose();
   }
+
 
 
   return (
