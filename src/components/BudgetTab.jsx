@@ -220,34 +220,47 @@ export default function BudgetTab({
     const pending = { inflows: new Set(), outflows: new Set() };
 
     for (const t of txs) {
-      if (isBlank(t.category)) continue;
-      if (!(t.date >= startISO && t.date <= endISO)) continue;
+    if (isBlank(t.category)) continue;
+    if (!(t.date >= startISO && t.date <= endISO)) continue;
+    const n = norm(t.category);
 
-      const n = norm(t.category);
-
-      if (t.type === "inflow") {
-        if (!have.inflows.has(n) && !pending.inflows.has(n)) {
-          toAdd.inflows.push({
-            category: t.category,
-            amount: 0,
-            auto: true,
-            children: [],
-          });
-          pending.inflows.add(n);
-        }
-      } else if (t.type === "expense") {
-        if (!have.outflows.has(n) && !pending.outflows.has(n)) {
-          toAdd.outflows.push({
-            category: t.category,
-            amount: 0,
-            auto: true,
-            children: [],
-            type: "variable",
-          });
-          pending.outflows.add(n);
+    // check both parents & all children before adding
+    const existsIn = (rows) => {
+      for (const r of rows) {
+        if (norm(r.category) === n) return true;
+        for (const c of r.children || []) {
+          if (norm(c.category) === n) return true;
         }
       }
+      return false;
+    };
+
+    if (t.type === "inflow") {
+      const inflowRows = getArray("inflows");
+      if (!existsIn(inflowRows) && !pending.inflows.has(n)) {
+        toAdd.inflows.push({
+          category: t.category,
+          amount: 0,
+          auto: true,
+          children: [],
+        });
+        pending.inflows.add(n);
+      }
+    } else if (t.type === "expense") {
+      const outflowRows = getArray("outflows");
+      if (!existsIn(outflowRows) && !pending.outflows.has(n)) {
+        toAdd.outflows.push({
+          category: t.category,
+          amount: 0,
+          auto: true,
+          children: [],
+          type: "variable",
+        });
+        pending.outflows.add(n);
+      }
     }
+  }
+
 
     if (toAdd.inflows.length || toAdd.outflows.length) {
       setBudgets((prev) => ({

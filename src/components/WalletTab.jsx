@@ -351,6 +351,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     const hitFixed = fixedLeaves.find((r) => normKey(r?.category) === key);
     if (hitFixed) return { leaf: hitFixed, bucket: "fixed" };
 
+
     const hitVar = varLeaves.find((r) => normKey(r?.category) === key);
     if (hitVar) return { leaf: hitVar, bucket: "variable" };
 
