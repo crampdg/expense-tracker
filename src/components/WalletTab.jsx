@@ -318,7 +318,15 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
 
   // Normalize text for comparisons
-  const normKey = (s) => (s || "").trim().toLowerCase();
+  const normKey = (s) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFKC")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width chars
+      .replace(/[’'`´]/g, "'")               // unify apostrophes
+      .replace(/[-–—]/g, "-")                // unify dashes
+      .replace(/[\s_]+/g, " ")               // collapse spaces/underscores
+      .trim();
 
   // Collect only leaf rows (children == 0), preserving original refs
   const collectLeaves = (rows = [], bag = []) => {

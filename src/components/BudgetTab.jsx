@@ -233,10 +233,9 @@ export default function BudgetTab({
       // If Money Time already resolved this to an existing budget leaf (we set this in WalletTab),
       // do NOT auto-create anything.
       const routed = t?.meta?.budgetRoute?.category;
-      if (routed && routed.trim()) {
-        // Extra safety: if the routed name is known anywhere (parent or child), skip creation.
-        if (haveOutflowNames.has(norm(routed)) || haveInflowNames.has(norm(routed))) continue;
-      }
+        // If Money Time already resolved this, skip auto-create unconditionally.
+        if (routed && routed.trim()) continue;
+
 
       if (t.type === "inflow") {
         if (!haveInflowNames.has(n) && !pending.inflows.has(n)) {
