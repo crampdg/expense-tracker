@@ -235,16 +235,19 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
   const txs = Array.isArray(transactions) ? transactions : [];
 
-  // Ensure we never add the same claimed transaction twice in this session
+    // Ensure we never add the same claimed transaction twice in this session (and skip if already in txs)
   const processedClaims = useRef(new Set());
+  const currentIds = useMemo(() => new Set(txs.map(t => t?.id).filter(Boolean)), [txs]);
   const processClaimTx = (tx) => {
     const id = tx?.id || "";
     if (!id) return;
     if (processedClaims.current.has(id)) return;
+    if (currentIds.has(id)) { processedClaims.current.add(id); return; }
     processedClaims.current.add(id);
     if (typeof onAddTransaction === "function") onAddTransaction(tx);
     else handleAddTransaction(tx);
   };
+
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -506,9 +509,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     };
     window.addEventListener("bleh:budget-claim", handler);
     return () => window.removeEventListener("bleh:budget-claim", handler);
-  }, [onAddTransaction]);
-
-
+  }, [onAddTransaction, currentIds]);
 
 
   // ---- Planned & actuals this period ----
