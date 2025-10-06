@@ -778,11 +778,16 @@ export default function BudgetTab({
         : {}),
     };
 
-    // Store a pending claim so Wallet can pick it up even if it mounts AFTER we click
-    try { localStorage.setItem("bleh:pending-claim", JSON.stringify(tx)); } catch {}
+    // Deliver the claim exactly once
+    const hasParentOnClaim = typeof onClaim === "function";
+    if (hasParentOnClaim) {
+      // Primary path: App updates transactions; no localStorage/event fallbacks.
+      try { onClaim(tx); } catch {}
+    } else {
+      // Fallback path: persist for Wallet mount pickup.
+      try { localStorage.setItem("bleh:pending-claim", JSON.stringify(tx)); } catch {}
+    }
 
-    // Try parent wire-up too (if App passed one)
-    try { onClaim?.(tx); } catch {}
 
     // Close editor ASAP
     try { setEditing(null); } catch {}
@@ -820,12 +825,15 @@ export default function BudgetTab({
     } catch {}
 
 
-    // Re-signal after navigation (Wallet may now be mounted)
-    try {
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("bleh:budget-claim", { detail: tx }));
-      }, 80);
-    } catch {}
+    // Re-signal after navigation (Wallet may now be mounted) — only if parent didn’t handle it
+    if (!hasParentOnClaim) {
+      try {
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("bleh:budget-claim", { detail: tx }));
+        }, 80);
+      } catch {}
+    }
+
 
     // Persist any edits silently (no "Saved" toast on Claim)
     try {

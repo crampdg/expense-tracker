@@ -1,5 +1,6 @@
 import { collectAllCategoryNames } from "../utils/budgetNames";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+
 import MoneyTimeModal from "./modals/MoneyTimeModal";
 import SavingsSettingsModal from "./modals/SavingsSettingsModal.jsx";
 import { getAnchoredPeriodStart, calcPeriodEnd } from "../utils/periodUtils";
@@ -233,7 +234,18 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }, [isInvestOpen]);
 
   const txs = Array.isArray(transactions) ? transactions : [];
-  
+
+  // Ensure we never add the same claimed transaction twice in this session
+  const processedClaims = useRef(new Set());
+  const processClaimTx = (tx) => {
+    const id = tx?.id || "";
+    if (!id) return;
+    if (processedClaims.current.has(id)) return;
+    processedClaims.current.add(id);
+    if (typeof onAddTransaction === "function") onAddTransaction(tx);
+    else handleAddTransaction(tx);
+  };
+
   useEffect(() => {
     const tick = setInterval(() => {
       const updated = accrueInvestMonthly(readInvestState(), new Date());
@@ -258,20 +270,18 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txs]);
 
-  // Pick up a claim saved before Wallet mounted
+  // Pick up a claim saved before Wallet mounted (deduped)
   useEffect(() => {
     try {
       const raw = localStorage.getItem("bleh:pending-claim");
       if (raw) {
         localStorage.removeItem("bleh:pending-claim");
         const tx = JSON.parse(raw);
-        if (tx) {
-          if (typeof onAddTransaction === "function") onAddTransaction(tx);
-          else handleAddTransaction(tx);
-        }
+        if (tx) processClaimTx(tx);
       }
     } catch {}
   }, []);
+
 
 
   // ---- Period window ----
@@ -492,15 +502,12 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     const handler = (e) => {
       const tx = e?.detail;
       if (!tx) return;
-      try {
-        // Use parent’s adder if available; otherwise rely on Wallet’s own handler
-        if (typeof onAddTransaction === "function") onAddTransaction(tx);
-        else handleAddTransaction(tx);
-      } catch {}
+      try { processClaimTx(tx); } catch {}
     };
     window.addEventListener("bleh:budget-claim", handler);
     return () => window.removeEventListener("bleh:budget-claim", handler);
   }, [onAddTransaction]);
+
 
 
 
