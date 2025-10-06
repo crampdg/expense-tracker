@@ -624,102 +624,33 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
         <button
           type="button"
-          onClick={openSettings}
+          data-noswipe
+          onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();openSettings();}}
           aria-label="Savings & Daily settings"
           title="Savings & Daily settings"
-          className="absolute top-2 right-2 z-20 p-2 rounded-full bg-white/40 hover:bg-white/60 active:bg-white/50 text-emerald-900 shadow-sm"
+          className="absolute right-3 top-3 rounded-full p-2 hover:bg黑/5 touch-manipulation"
+
         >
           <Gear size={18} />
         </button>
 
         <div className="relative z-10 px-5 py-6 md:px-7 md:py-8">
-          {/* INVESTMENTS MOVED TO SAVINGS TAB */}
-          {false && (
-          <div className="rounded-2xl border border-emerald-300/60 bg-white/80 backdrop-blur px-4 py-3 mt-1">
-            <button
-              type="button"
-              onClick={() => setIsInvestOpen((v) => !v)}
-              aria-expanded={isInvestOpen}
-              aria-controls="investments-panel"
-              className="w-full flex items-center justify-between"
-            >
-              <div className="text-sm font-semibold text-emerald-900">Investments</div>
-              <div className="flex items-center gap-2">
-                {isInvestOpen && (
-                  <div className="text-xs text-emerald-800/80">
-                    APR {(readInvestAPR() * 100).toFixed(2)}%
-                  </div>
-                )}
-                <ChevronDown className={`h-4 w-4 transition-transform ${isInvestOpen ? "rotate-180" : ""}`} />
-              </div>
-            </button>
-
-            <div id="investments-panel" className={isInvestOpen ? "mt-2 space-y-3" : "hidden"}>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                  <div className="text-[11px] text-emerald-900/80">Principal invested</div>
-                  <div className="text-base font-semibold text-emerald-900">{currency(invest.principal)}</div>
-                </div>
-                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                  <div className="text-[11px] text-emerald-900/80">Current balance</div>
-                  <div className="text-base font-semibold text-emerald-900">{currency(invest.balance)}</div>
-                </div>
-                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                  <div className="text-[11px] text-emerald-900/80">Amount earned</div>
-                  <div className="text-base font-semibold text-emerald-900">{currency(invest.balance - invest.principal)}</div>
-                </div>
-              </div>
-
-              <div className="text-xs text-emerald-900/80">
-                In 20 years (forecast):{" "}
-                <span className="font-semibold text-emerald-900">
-                  {currency(invest.balance * Math.pow(1 + readInvestAPR() / 12, 12 * 20))}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={investNow}
-                  className="px-3 py-1.5 text-sm rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-                >
-                  INVEST!
-                </button>
-                <button
-                  type="button"
-                  onClick={withdrawNow}
-                  className="px-3 py-1.5 text-sm rounded-full bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-semibold"
-                >
-                  Withdraw
-                </button>
-              </div>
-            </div>
-          </div>
-          )}
-
+          
           {/* Cash on Hand */}
           <div className="mt-3 text-sm text-emerald-950/90">Cash on Hand</div>
           <div className={`mt-1 text-4xl md:text-5xl font-extrabold leading-tight drop-shadow-sm ${cashOnHand < 0 ? "text-red-700" : "text-emerald-900"}`} aria-live="polite">
             {currency(cashOnHand)}
           </div>
 
-          {/* Suggested Daily */}
-          <div className="mt-3 flex items-baseline gap-2">
-            <div className="text-sm text-emerald-950/80" title={((budget?.inflows?.length || 0)+(budget?.outflows?.length || 0))>0 ? "After planned bills, savings pot & buffer" : "Cash ÷ days left"}>
-              Suggested Daily
-            </div>
-            <div className={`text-2xl font-bold ${amtClass(suggestedDaily)}`}>{currency(suggestedDaily)}</div>
-          </div>
-
           <div className="mt-1 text-xs text-emerald-950/70">through <span className="font-medium">{endISO}</span></div>
 
           <div className="mt-4">
             <button
-              onClick={() => setShowMoneyTime(true)}
+              data-noswipe
+              onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();setShowMoneyTime(true);}}
               type="button"
-              className="inline-flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:bg-yellow-300
-                         text-yellow-900 font-extrabold tracking-wide px-5 py-2.5 rounded-full shadow
-                         border border-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-400"
+              className="inline-flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:bg-yellow-400 px-4 py-2 rounded-xl font-semibold touch-manipulation"
+
             >
               <span>💰</span><span>MONEY TIME!</span><span className="text-lg">✨</span>
             </button>

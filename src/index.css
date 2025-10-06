@@ -62,3 +62,9 @@ tbody tr > .td.text-right { @apply tabular-nums; }
   .card { box-shadow: none !important; border-color: #e5e7eb !important; }
   #root { background: #fff; }
 }
+
+/* Make taps immediate on iOS and kill double-tap zoom delays at the root */
+html, body { touch-action: manipulation; }
+
+/* Reusable helper for any tap target */
+.touch-manipulation { touch-action: manipulation; }

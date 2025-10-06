@@ -381,7 +381,8 @@ export default function BudgetTab({
 
 
   // -------------------- collapse state (persisted) ---------------------------
-  const COLLAPSE_KEY = "bleh:budget:collapsed:v2";
+  const COLLAPSE_KEY = "bleh:budget:collapsed:v3";
+
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return new Set();
     try {
@@ -403,12 +404,14 @@ export default function BudgetTab({
   }, [collapsed]);
 
   const keyFor = (section, pathOrName) => {
-    const name =
-      Array.isArray(pathOrName)
-        ? getItemAtPath(section, pathOrName)?.category
-        : pathOrName;
-    return `${section}:${norm(name || "")}`;
+    const item = Array.isArray(pathOrName)
+      ? getItemAtPath(section, pathOrName)
+      : { category: pathOrName };
+    const name = item?.category || "";
+    const typeTag = section === "outflows" ? (item?.type || "variable") : "inflow";
+    return `${section}:${typeTag}:${norm(name)}`;
   };
+
   const isCollapsed = (section, pathOrName) => collapsed.has(keyFor(section, pathOrName));
   const toggleCollapse = (section, pathOrName) =>
     setCollapsed((s) => {
@@ -844,9 +847,13 @@ export default function BudgetTab({
               "odd:bg-white even:bg-slate-50/60",
               depth === 0 && isCollapsed(section, path) ? "" : "hover:bg-slate-50"
             ].join(" ")}
-            onClick={
-              editing ? undefined : () => setEditing({ section, path, isNew: false })
-            }
+            onPointerUp={(e) => {
+              if (editing) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setEditing({ section, path, isNew: false });
+            }}
+
             data-depth={depth}
           >
             <td className={titleCellClass}>
@@ -854,14 +861,17 @@ export default function BudgetTab({
                 {depth === 0 && item.children?.length ? (
                   <button
                     type="button"
-                    className="text-slate-400 hover:text-slate-600"
-                    onClick={(e) => {
+                    className="text-slate-400 hover:text-slate-600 touch-manipulation"
+                    data-noswipe
+                    onPointerUp={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       toggleCollapse(section, path);
                     }}
                     title={isCollapsed(section, path) ? "Expand" : "Collapse"}
                     aria-label={isCollapsed(section, path) ? "Expand subcategories" : "Collapse subcategories"}
-                  >
+>
+
                     {isCollapsed(section, path) ? "▸" : "▾"}
                   </button>
                 ) : null}
@@ -948,7 +958,7 @@ export default function BudgetTab({
               type="button"
               variant="ghost"
               className="!px-2 !py-1"
-              onClick={() => setMenuOpen((o) => !o)}
+              onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();() => setMenuOpen((o) => !o)}}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               title="More"
@@ -958,8 +968,11 @@ export default function BudgetTab({
             {menuOpen && (
               <div className="absolute right-0 mt-1 w-48 rounded-md border border-slate-200 bg-white shadow-md z-20">
                 <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  onClick={() => {
+                  className="w-full text-left px-3 py-2 text-sm ...ver:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
+                  data-noswipe
+                  onPointerUp={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     undo();
                     setMenuOpen(false);
                   }}
@@ -967,6 +980,7 @@ export default function BudgetTab({
                 >
                   Undo
                 </button>
+
                 <div className="px-2 py-1.5 border-t border-slate-100">
                   <ExportPDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
                 </div>
@@ -974,23 +988,31 @@ export default function BudgetTab({
                   <SharePDFButton targetId="budget-tab" filename={`${startISO}_to_${endISO}_Budget.pdf`} compact />
                 </div>
                 <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                  onClick={() => {
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 touch-manipulation"
+                  data-noswipe
+                  onPointerUp={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     setPeriodOffset(0);
                     setMenuOpen(false);
                   }}
                 >
                   Reset to current period
                 </button>
+
                 <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                  onClick={() => {
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 touch-manipulation"
+                  data-noswipe
+                  onPointerUp={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     setPeriodOpen(true);
                     setMenuOpen(false);
                   }}
                 >
                   Period settings…
                 </button>
+
               </div>
             )}
           </div>
@@ -1151,10 +1173,12 @@ export default function BudgetTab({
             />
           </div>
           <div className="pt-1 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setPeriodOpen(false)}>
+            <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();setPeriodOpen(false);}}>
               Close
             </Button>
-            <Button onClick={() => setPeriodOpen(false)}>Done</Button>
+            <Button data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();setPeriodOpen(false);}}>Done</Button>
+
+            <Button onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();() => setPeriodOpen(false)}}>Done</Button>
           </div>
         </div>
       </Modal>

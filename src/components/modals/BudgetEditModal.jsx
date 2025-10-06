@@ -239,19 +239,20 @@ export default function BudgetEditModal({
           <div className="pt-1 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               {!isNew ? (
-                <Button variant="ghost" onClick={handleDelete}>
+                <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();handleDelete();}}>
                   Delete
                 </Button>
               ) : null}
               {!form.parent ? (
-                <Button variant="ghost" onClick={handleClaim} title="Create a transaction from this line">
+                <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();handleClaim();}} title="Create a transaction from this line">
                   Claim
                 </Button>
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button onClick={handleSave}>{isNew ? 'Add' : 'Save'}</Button>
+              <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();onClose();}}>Cancel</Button>
+              <Button data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();handleSave();}}>{isNew ? 'Add' : 'Save'}</Button>
+
             </div>
           </div>
         </div>

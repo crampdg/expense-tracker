@@ -138,8 +138,9 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
         />
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button variant="ghost" data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();onClose();}}>Cancel</Button>
+          <Button data-noswipe onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();handleSave();}}>Save</Button>
+
         </div>
       </div>
     </Modal>

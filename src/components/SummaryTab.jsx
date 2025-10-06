@@ -212,9 +212,11 @@ export default function SummaryTab({ transactions, budget, period, periodOffset,
               type="button"
               variant="ghost"
               className="!px-2 !py-1"
-              onClick={() => setMenuOpen((v) => !v)}
+              data-noswipe
+              onPointerUp={(e)=>{e.preventDefault();e.stopPropagation();setMenuOpen((v)=>!v)}}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
+
               title="More"
             >
               ⋯
