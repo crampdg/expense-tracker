@@ -218,11 +218,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
   }, [isInvestOpen]);
 
   const txs = Array.isArray(transactions) ? transactions : [];
-  const categories = useMemo(() => collectAllCategoryNames(canonBudget), [canonBudget]);
-
-
-
-
+  
   useEffect(() => {
     const tick = setInterval(() => {
       const updated = accrueInvestMonthly(readInvestState(), new Date());
@@ -331,6 +327,7 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     return { ...b, outflows: filteredOutflows };
   }, [budget]);
 
+  const categories = useMemo(() => collectAllCategoryNames(canonBudget), [canonBudget]);
 
   // Collect only leaf rows (children == 0), preserving original refs
   const collectLeaves = (rows = [], bag = []) => {
