@@ -204,63 +204,41 @@ export default function BudgetTab({
   const netBudgeted = inflowsTotalBudget - outflowsTotalBudget;
   const netActual = inflowsTotalActual - outflowsTotalActual;
 
-  // ---- auto-rows from transactions (unchanged) ------------------------------
+  // ---- auto-rows from transactions (hardened: consider parents + children) --
   useEffect(() => {
-    const have = { inflows: new Set(), outflows: new Set() };
-    (getArray("inflows") ?? []).forEach((r) => {
-      have.inflows.add(norm(r.category));
-      r.children?.forEach((c) => have.inflows.add(norm(c.category)));
-    });
-    (getArray("outflows") ?? []).forEach((r) => {
-      have.outflows.add(norm(r.category));
-      r.children?.forEach((c) => have.outflows.add(norm(c.category)));
-    });
+    const allNames = (rows) => {
+      const s = new Set();
+      for (const r of rows || []) {
+        s.add(norm(r.category));
+        for (const c of r.children || []) s.add(norm(c.category));
+      }
+      return s;
+    };
+
+    const haveInflowNames = allNames(getArray("inflows"));
+    const haveOutflowNames = allNames(getArray("outflows"));
 
     const toAdd = { inflows: [], outflows: [] };
     const pending = { inflows: new Set(), outflows: new Set() };
 
     for (const t of txs) {
-    if (isBlank(t.category)) continue;
-    if (!(t.date >= startISO && t.date <= endISO)) continue;
-    const n = norm(t.category);
+      if (isBlank(t.category)) continue;
+      if (!(t.date >= startISO && t.date <= endISO)) continue;
+      const n = norm(t.category);
 
-    // check both parents & all children before adding
-    const existsIn = (rows) => {
-      for (const r of rows) {
-        if (norm(r.category) === n) return true;
-        for (const c of r.children || []) {
-          if (norm(c.category) === n) return true;
+      if (t.type === "inflow") {
+        if (!haveInflowNames.has(n) && !pending.inflows.has(n)) {
+          toAdd.inflows.push({ category: t.category, amount: 0, auto: true, children: [] });
+          pending.inflows.add(n);
+        }
+      } else if (t.type === "expense") {
+        // ✅ Key rule: if name exists anywhere in outflows (parent OR child), do NOT add
+        if (!haveOutflowNames.has(n) && !pending.outflows.has(n)) {
+          toAdd.outflows.push({ category: t.category, amount: 0, auto: true, children: [], type: "variable" });
+          pending.outflows.add(n);
         }
       }
-      return false;
-    };
-
-    if (t.type === "inflow") {
-      const inflowRows = getArray("inflows");
-      if (!existsIn(inflowRows) && !pending.inflows.has(n)) {
-        toAdd.inflows.push({
-          category: t.category,
-          amount: 0,
-          auto: true,
-          children: [],
-        });
-        pending.inflows.add(n);
-      }
-    } else if (t.type === "expense") {
-      const outflowRows = getArray("outflows");
-      if (!existsIn(outflowRows) && !pending.outflows.has(n)) {
-        toAdd.outflows.push({
-          category: t.category,
-          amount: 0,
-          auto: true,
-          children: [],
-          type: "variable",
-        });
-        pending.outflows.add(n);
-      }
     }
-  }
-
 
     if (toAdd.inflows.length || toAdd.outflows.length) {
       setBudgets((prev) => ({
@@ -271,6 +249,7 @@ export default function BudgetTab({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startISO, endISO, txs]);
+
 
   // -------------------- collapse state (persisted) ---------------------------
   const COLLAPSE_KEY = "bleh:budget:collapsed:v2";

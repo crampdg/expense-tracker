@@ -218,29 +218,29 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
   const txs = Array.isArray(transactions) ? transactions : [];
   const categories = useMemo(() => {
-  const set = new Set();
-  const push = (s) => {
-    const v = (s || "").trim();
-    if (v) set.add(v);
-  };
+    const set = new Set();
+    const push = (s) => { const v = (s || "").trim(); if (v) set.add(v); };
 
-  const process = (rows = []) => {
-    for (const r of rows) {
-      const kids = Array.isArray(r?.children) ? r.children : [];
-      if (kids.length > 0) {
-        // parent with children ⇒ suggest the children
-        for (const c of kids) push(c?.category);
-      } else {
-        // high-level (leaf) ⇒ suggest the parent
-        push(r?.category);
+    // from budget: suggest children if parent has any; else the parent
+    const process = (rows = []) => {
+      for (const r of rows) {
+        const kids = Array.isArray(r?.children) ? r.children : [];
+        if (kids.length > 0) {
+          for (const c of kids) push(c?.category);
+        } else {
+          push(r?.category);
+        }
       }
-    }
-  };
+    };
+    process(budget?.inflows || []);
+    process(budget?.outflows || []);
 
-  process(budget?.inflows || []);
-  process(budget?.outflows || []);
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}, [budget]);
+    // from transactions history (ever used)
+    for (const t of txs) push(t?.category);
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [budget, txs]);
+
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -330,33 +330,41 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     return bag;
   };
 
-  // Given the full budget object, find an existing leaf named `cat`.
-  // Returns {leaf, bucket} where bucket is "fixed" | "variable" | "inflow".
+  // Find an existing LEAF named `cat` in the current schema.
+  // Returns { leaf, bucket } where bucket ∈ {"inflow","fixed","variable"}.
   function resolveExistingCategory(budget, cat, txType) {
     const key = normKey(cat);
 
+    // helper: collect leaves from a mixed tree (parents may have children)
+    const leavesOf = (rows = []) => {
+      const out = [];
+      for (const r of rows) {
+        const kids = Array.isArray(r?.children) ? r.children : [];
+        if (kids.length > 0) {
+          for (const c of kids) out.push({ ...c, __parentType: r?.type });
+        } else {
+          // parent with no children behaves like a leaf
+          out.push({ ...r, __parentType: r?.type });
+        }
+      }
+      return out;
+    };
+
     if (txType === "inflow") {
-      const inflowLeaves = collectLeaves(budget?.inflows || []);
+      const inflowLeaves = leavesOf(budget?.inflows || []);
       const hit = inflowLeaves.find((r) => normKey(r?.category) === key);
       if (hit) return { leaf: hit, bucket: "inflow" };
       return null;
     }
 
-    // expenses → search fixed leaves first, then variable leaves
-    const fixedLeaves =
-      collectLeaves(budget?.fixedOutflows || budget?.outflowsFixed || []);
-    const varLeaves =
-      collectLeaves(budget?.variableOutflows || budget?.outflowsVariable || []);
-
-    const hitFixed = fixedLeaves.find((r) => normKey(r?.category) === key);
-    if (hitFixed) return { leaf: hitFixed, bucket: "fixed" };
-
-
-    const hitVar = varLeaves.find((r) => normKey(r?.category) === key);
-    if (hitVar) return { leaf: hitVar, bucket: "variable" };
-
-    return null;
+    // expense: search all outflow leaves, infer bucket from leaf.type or parent’s type
+    const outLeaves = leavesOf(budget?.outflows || []);
+    const hit = outLeaves.find((r) => normKey(r?.category) === key);
+    if (!hit) return null;
+    const t = (hit?.type || hit?.__parentType || "variable").toLowerCase();
+    return { leaf: hit, bucket: t === "fixed" ? "fixed" : "variable" };
   }
+
 
 
   // ---- Wrap inflows to auto-save (robust inflow detection) ----
