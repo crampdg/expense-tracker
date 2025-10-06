@@ -743,48 +743,51 @@ export default function BudgetTab({
   };
 
   const claimRow = ({ section, path, isNew }, form) => {
-    // Always save first so state is canonical
+    // Only claim for top-level rows (subs can’t be claimed directly)
+    if (path?.length === 2) return;
+
+    // Compute the amount to claim BEFORE mutating state, so we don't read stale data.
+    // Prefer the form amount; fall back to current row amount if form is empty.
+    const current = getItemAtPath(section, path) || {};
+    const amountToClaim = Number(
+      (form?.amount ?? current?.amount ?? 0) || 0
+    );
+    const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
+
+    // 1) Impact wallet right away
+    onClaim?.({
+      section,
+      category: categoryName,
+      amount: amountToClaim,
+      source: "budget-claim"
+    });
+
+    // 2) Save the row (this can update the label/amount, but claim already happened)
     saveRow(
       { section, path, isNew },
       { category: form.category, amount: form.amount, parent: null, type: form?.type },
       "none"
     );
 
-    // Only claim for top-level rows (subs can’t be claimed directly)
-    if (path?.length === 2) return;
-
-    // Re-read from current budgets to get the true budgeted amount
-    const keyName = norm((form.category || "").trim() || "Untitled");
-    const rows = getArray(section);
-    const idx = rows.findIndex(r => norm(r.category) === keyName);
-
-    if (idx > -1) {
-      const row = rows[idx];
-      const budgetedAmount = Number(row.amount || 0);
-
-      // Impact wallet
-      onClaim?.({
-        section,
-        category: row.category,
-        amount: budgetedAmount,
-        source: "budget-claim"
-      });
-
-      // Navigate to Wallet tab (several safe fallbacks)
-      try {
-        window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } }));
-      } catch {}
-      try {
-        // hash fallback (if your app watches location.hash)
-        if (typeof window !== "undefined") window.location.hash = "#wallet";
-      } catch {}
-      try {
-        // localStorage signal fallback (if your app checks this on focus)
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("bleh:navigate:tab", "wallet");
-        }
-      } catch {}
-    }
+    // 3) Navigate to Wallet using several fallbacks
+    try {
+      window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } }));
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        // hash-based
+        window.location.hash = "#wallet";
+        // query-based (in case your app reads ?tab=)
+        const u = new URL(window.location.href);
+        u.searchParams.set("tab", "wallet");
+        window.history.replaceState(null, "", u.toString());
+      }
+    } catch {}
+    try {
+      // click a bottom-nav button if present
+      const el = document.querySelector('[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet');
+      if (el) el.click();
+    } catch {}
   };
 
 
