@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+
 import usePersistentState from "../hooks/usePersistentState";
 import { money } from "../utils/format";
 import uid from "../utils/uid";
@@ -42,27 +43,86 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
   const [modal, setModal] = useState({ type: null, goalId: null }); // 'invest'|'withdraw'|'edit'|'add'|'remove'
   const txs = Array.isArray(transactions) ? transactions : [];
 
+  // Auto-create Savings goals from transactions routed to fixed parent "Savings"
+  useEffect(() => {
+    const norm = (s) =>
+      (s || "")
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[’'`´]/g, "'")
+        .replace(/[-–—]/g, "-")
+        .replace(/[\s_]+/g, " ")
+        .trim();
+
+    const namesFromTx = new Set();
+    for (const t of txs) {
+      const route = t?.meta?.budgetRoute || {};
+      if ((route.bucket === "fixed") && norm(route.parent) === "savings") {
+        namesFromTx.add(String(route.category || t.category || "").trim());
+      }
+    }
+    if (!namesFromTx.size) return;
+
+    setGoals((prev) => {
+      const arr = Array.isArray(prev) ? prev.slice() : [];
+      const have = new Set(arr.map((g) => norm(g.name)));
+      let changed = false;
+      for (const name of namesFromTx) {
+        if (name && !have.has(norm(name))) {
+          arr.push({ id: safeUid(), name, target: null, createdAt: Date.now() });
+          changed = true;
+        }
+      }
+      return changed ? arr : prev;
+    });
+  }, [txs, setGoals]);
+
+
   // --- derive per-goal balances from transactions (single source of truth) ---
   const balancesById = useMemo(() => {
     const m = new Map();
-    for (const g of Array.isArray(goals) ? goals : []) m.set(g.id, 0);
+    const byName = new Map();
+    for (const g of Array.isArray(goals) ? goals : []) {
+      m.set(g.id, 0);
+      byName.set((g.name || "").toLowerCase(), g.id);
+    }
+
+    const norm = (s) =>
+      (s || "")
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[’'`´]/g, "'")
+        .replace(/[-–—]/g, "-")
+        .replace(/[\s_]+/g, " ")
+        .trim();
 
     for (const t of txs) {
-      const meta = t?.meta || {};
-      const gid = meta.savingsGoalId;
-      if (!gid || !m.has(gid)) continue;
-
       const amt = Math.max(0, Number(t.amount) || 0);
       if (!amt) continue;
 
-      // Convention:
-      //  - expense to savings = invest -> increases goal balance
-      //  - inflow from savings = withdraw -> decreases goal balance
+      const meta = t?.meta || {};
+      let gid = meta.savingsGoalId;
+
+      if (!gid) {
+        const maybeName =
+          meta.savingsGoalName ||
+          (meta.budgetRoute && norm(meta.budgetRoute.parent) === "savings" ? meta.budgetRoute.category : null) ||
+          t.category;
+        const key = norm(maybeName);
+        gid = byName.get(key);
+      }
+
+      if (!gid || !m.has(gid)) continue;
+
+      // expense to savings = invest; inflow from savings = withdraw
       if (t.type === "expense") m.set(gid, (m.get(gid) || 0) + amt);
       else if (t.type === "inflow") m.set(gid, Math.max(0, (m.get(gid) || 0) - amt));
     }
     return m;
   }, [txs, goals]);
+
 
   const goalsList = Array.isArray(goals) ? goals : [];
   const activeGoal = goalsList.find((g) => g.id === modal.goalId) || null;
@@ -100,11 +160,18 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
       id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       date: new Date().toISOString().slice(0, 10),
       type: isInvest ? "expense" : "inflow",
-      category: `Savings: ${goal.name}`,
+      category: goal.name, // no "Savings: " prefix
       amount: amt,
       note: note || (isInvest ? "Invested into savings goal" : "Withdrew from savings goal"),
-      meta: { savings: true, savingsGoalId: goal.id, action: isInvest ? "invest" : "withdraw" },
+      meta: {
+        savings: true,
+        savingsGoalId: goal.id,
+        savingsGoalName: goal.name,
+        action: isInvest ? "invest" : "withdraw",
+        budgetRoute: { bucket: isInvest ? "fixed" : "inflow", parent: "Savings", category: goal.name },
+      },
     };
+
 
     // prefer parent’s handler so Wallet/Detailed/Summary update in one place
     if (typeof onAddTransaction === "function") {

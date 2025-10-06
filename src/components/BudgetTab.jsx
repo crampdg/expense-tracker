@@ -305,6 +305,17 @@ export default function BudgetTab({
       changed = true;
     };
 
+    const ensureParentFixed = (name) => {
+      const want = norm(name);
+      let idx = nextOutflows.findIndex(r => norm(r.category) === want && (r.type || "variable") === "fixed");
+      if (idx === -1) {
+        ensureCloned();
+        nextOutflows.push({ category: name, amount: 0, auto: true, children: [], type: "fixed" });
+        idx = nextOutflows.length - 1;
+      }
+      return idx;
+    };
+
     for (const t of txns) {
       const rawName = String(t.category || "").trim();
       if (!rawName) continue;
@@ -312,19 +323,35 @@ export default function BudgetTab({
 
       const rawType = String(t.type || "").toLowerCase();
       const isOutflow = rawType ? rawType === "expense" : Number(t.amount) < 0;
+
+      const route = t?.meta?.budgetRoute || null;
+
+      // Handle explicit routed Savings → create fixed parent + child
+      if (isOutflow && route && norm(route.parent || "") === "savings" && (route.bucket === "fixed")) {
+        const parentIdx = ensureParentFixed("Savings");
+        const children = Array.isArray(nextOutflows[parentIdx].children) ? nextOutflows[parentIdx].children : (nextOutflows[parentIdx].children = []);
+        const existsChild = children.some(c => norm(c.category) === n);
+        if (!existsChild) {
+          ensureCloned();
+          nextOutflows[parentIdx].children = [...children, { category: rawName, amount: 0, auto: true, children: [], type: "fixed" }];
+        }
+        // mark so generic auto-adder won’t create top-level variable
+        existingOutflowNames.add(n);
+        continue;
+      }
+
       if (!isOutflow) continue;
 
-      // Respect explicit routing
-      if (t?.meta?.budgetRoute && norm(t.meta.budgetRoute.category)) continue;
+      // Respect other explicit routing
+      if (route && norm(route.category || "")) continue;
 
-      // If name exists anywhere, don't create
+      // Generic auto-add (top-level variable) for brand new names
       if (existingOutflowNames.has(n)) continue;
       const existsAnywhere = nextOutflows.some(
         (p) => norm(p.category) === n || (p.children || []).some((c) => norm(c.category) === n)
       );
       if (existsAnywhere) continue;
 
-      // Truly new: create variable outflow, marked auto
       ensureCloned();
       nextOutflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
       existingOutflowNames.add(n);
@@ -333,8 +360,8 @@ export default function BudgetTab({
     if (changed) {
       setBudgets(prev => ({ ...prev, outflows: nextOutflows }));
     }
-    // NOTE: depend only on the outflows slice to avoid re-running on unrelated state
   }, [transactions, budgets?.outflows, setBudgets]);
+
 
 
 
