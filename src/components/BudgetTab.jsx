@@ -342,6 +342,44 @@ export default function BudgetTab({
     setBudgets(next);
   }, [transactions, budgets, setBudgets]);
 
+
+  // ---- one-time dedupe: remove top-level outflows that duplicate any child name
+  useEffect(() => {
+    const base = Array.isArray(budgets?.outflows) ? budgets.outflows : [];
+    if (!base.length) return;
+
+    const norm = (s) =>
+      (s || "")
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[’'`´]/g, "'")
+        .replace(/[-–—]/g, "-")
+        .replace(/[\s_]+/g, " ")
+        .trim();
+
+    // collect every child name
+    const childNames = new Set();
+    for (const p of base) {
+      for (const c of p?.children || []) childNames.add(norm(c.category));
+    }
+
+    // if a top-level parent has NO children and its name matches a child, drop it
+    const filtered = base.filter((p) => {
+      const isChildName = childNames.has(norm(p.category));
+      const hasKids = (p?.children || []).length > 0;
+      return !(isChildName && !hasKids);
+    });
+
+    // only write if changed
+    if (filtered.length !== base.length) {
+      setBudgets((prev) => ({ ...prev, outflows: filtered }));
+    }
+    // run once per budgets snapshot
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [budgets?.outflows]);
+
+
   // -------------------- collapse state (persisted) ---------------------------
   const COLLAPSE_KEY = "bleh:budget:collapsed:v2";
   const [collapsed, setCollapsed] = useState(() => {
