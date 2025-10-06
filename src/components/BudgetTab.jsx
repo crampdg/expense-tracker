@@ -22,7 +22,16 @@ export default function BudgetTab({
   onBulkRenameTransactions,
 }) {
   // -------------------- helpers --------------------
-  const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const norm = (s) =>
+  (s || "")
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // zero-width
+    .replace(/[’'`´]/g, "'")               // apostrophes
+    .replace(/[-–—]/g, "-")                // dashes
+    .replace(/[\s_]+/g, " ")               // collapse spaces/underscores
+    .trim();
+
   const isBlank = (s) => !s || !s.trim();
 
   const VALID_TYPES = new Set(["Monthly", "Biweekly", "Weekly", "SemiMonthly", "Annually"]);
@@ -222,6 +231,13 @@ export default function BudgetTab({
     const pending = { inflows: new Set(), outflows: new Set() }; // avoid dupes within this pass
 
 
+    const haveOutflowChildNames = new Set(
+      getArray("outflows").flatMap(p => (p.children || []).map(c => norm(c.category)))
+    );
+    const haveInflowChildNames = new Set(
+      getArray("inflows").flatMap(p => (p.children || []).map(c => norm(c.category)))
+    );
+
     for (const t of txs) {
       if (isBlank(t.category)) continue;
       if (!(t.date >= startISO && t.date <= endISO)) continue;
@@ -244,7 +260,7 @@ export default function BudgetTab({
         }
       } else if (t.type === "expense") {
         // ✅ Key rule: if name exists anywhere in outflows (parent OR child), do NOT add
-        if (!haveOutflowNames.has(n) && !pending.outflows.has(n)) {
+        if (!haveOutflowNames.has(n) && !haveOutflowChildNames.has(n) && !pending.outflows.has(n)) {
           toAdd.outflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
           pending.outflows.add(n);
         }
@@ -254,7 +270,7 @@ export default function BudgetTab({
 
     if (toAdd.inflows.length || toAdd.outflows.length) {
     setBudgets((prev) => {
-      const norm = (s) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+      // use the same robust normalizer defined above (do not shadow it)
       const allNames = (rows) => {
         const s = new Set();
         for (const r of (Array.isArray(rows) ? rows : [])) {
@@ -263,6 +279,7 @@ export default function BudgetTab({
         }
         return s;
       };
+
 
       // 🔒 Re-check against the *current* budget before committing
       const haveIn = allNames(prev?.inflows);
