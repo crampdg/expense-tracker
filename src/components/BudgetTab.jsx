@@ -322,11 +322,7 @@ export default function BudgetTab({
     }
 
     setBudgets(next);
-  }, [transactionsByPeriod, periodKey, budgets, setBudgets]);
-
-
-
-
+  }, [transactions, budgets, setBudgets]);
 
   // -------------------- collapse state (persisted) ---------------------------
   const COLLAPSE_KEY = "bleh:budget:collapsed:v2";
