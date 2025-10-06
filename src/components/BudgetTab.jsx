@@ -460,7 +460,8 @@ export default function BudgetTab({
   };
 
   // -------------------- save/delete/claim ------------------------
-  const saveRow = ({ section, path, isNew }, form, scope = "none") => {
+  const saveRow = ({ section, path, isNew }, form, scope = "none", suppressToast = false) => {
+
     const newName = (form.category || "").trim() || "Untitled";
     const newNorm = norm(newName);
     const targetParentName = form.parent ? form.parent.trim() : null;
@@ -546,9 +547,10 @@ export default function BudgetTab({
       if (section === "outflows") arr = consolidateParents(arr);
 
       setArray(section, arr);
-      showUndoToast?.(`Added “${newName}”`, () => setBudgets(snapshot));
+      if (!suppressToast) showUndoToast?.(`Added “${newName}”`, () => setBudgets(snapshot));
       setEditing(null);
       return;
+
     }
 
     // --------- EDIT EXISTING ---------
@@ -589,9 +591,10 @@ export default function BudgetTab({
         });
         // consolidate if outflows
         const nextArr = section === "outflows" ? consolidateParents(base) : base;
-        setArray(section, nextArr);
+        setArray(section, arr);
         setEditing(null);
-        showUndoToast?.(`Saved “${newName}”`, () => setBudgets(snapshot));
+        if (!suppressToast) showUndoToast?.(`Saved “${newName}”`, () => setBudgets(snapshot));
+
         return;
       }
 
@@ -738,64 +741,79 @@ export default function BudgetTab({
   };
 
   const claimRow = ({ section, path, isNew }, form) => {
-  const current = getItemAtPath(section, path) || {};
-  const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
+    const current = getItemAtPath(section, path) || {};
+    const categoryName = (form?.category ?? current?.category ?? "Untitled").trim();
 
-  const amountToClaim = Number(
-    (form?.amount !== undefined && form?.amount !== null && form?.amount !== "")
-      ? form.amount
-      : (current?.amount ?? 0)
-  );
+    const amountToClaim = Number(
+      (form?.amount !== undefined && form?.amount !== null && form?.amount !== "")
+        ? form.amount
+        : (current?.amount ?? 0)
+    );
 
-  // Build a full Wallet transaction (positive amount; Wallet interprets type)
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const txType = section === "inflows" ? "inflow" : "expense";
-  const bucket =
-    section === "outflows"
-      ? ((current?.type || form?.type || "variable") === "fixed" ? "fixed" : "variable")
-      : "inflow";
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const txType = section === "inflows" ? "inflow" : "expense";
+    const bucket =
+      section === "outflows"
+        ? ((current?.type || form?.type || "variable") === "fixed" ? "fixed" : "variable")
+        : "inflow";
 
-  const tx = {
-    id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    date: todayISO,
-    type: txType,
-    category: categoryName,
-    amount: Math.max(0, amountToClaim || 0),
-    note: "Claimed from Budget",
-    ...(txType === "expense"
-      ? { meta: { budgetRoute: { bucket, category: categoryName } } }
-      : {}),
+    const tx = {
+      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      date: todayISO,
+      type: txType,
+      category: categoryName,
+      amount: Math.max(0, amountToClaim || 0),
+      note: "Claimed from Budget",
+      ...(txType === "expense"
+        ? { meta: { budgetRoute: { bucket, category: categoryName } } }
+        : {}),
+    };
+
+    // Store a pending claim so Wallet can pick it up even if it mounts AFTER we click
+    try { localStorage.setItem("bleh:pending-claim", JSON.stringify(tx)); } catch {}
+
+    // Try parent wire-up too (if App passed one)
+    try { onClaim?.(tx); } catch {}
+
+    // Close editor ASAP
+    try { setEditing(null); } catch {}
+
+    // Navigate hard to Wallet
+    try { window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } })); } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        window.location.hash = "#wallet";
+        const u = new URL(window.location.href);
+        u.searchParams.set("tab", "wallet");
+        window.history.replaceState(null, "", u.toString());
+      }
+    } catch {}
+    try {
+      const el = document.querySelector(
+        '[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet, a[href="#wallet"], [data-route="wallet"]'
+      );
+      if (el) el.click();
+    } catch {}
+
+    // Re-signal after navigation (Wallet may now be mounted)
+    try {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("bleh:budget-claim", { detail: tx }));
+      }, 80);
+    } catch {}
+
+    // Persist any edits silently (no "Saved" toast on Claim)
+    try {
+      saveRow(
+        { section, path, isNew },
+        { category: form.category, amount: form.amount, parent: null, type: form?.type },
+        "none",
+        true // suppressToast
+      );
+    } catch {}
   };
 
-  // Send to parent if wired, and also emit a fallback event WalletTab listens for
-  try { onClaim?.(tx); } catch {}
-  try { window.dispatchEvent(new CustomEvent("bleh:budget-claim", { detail: tx })); } catch {}
 
-  // Save any edits (non-blocking)
-  try {
-    saveRow(
-      { section, path, isNew },
-      { category: form.category, amount: form.amount, parent: null, type: form?.type },
-      "none"
-    );
-  } catch {}
-
-  // Close & navigate to Wallet
-  try { setEditing(null); } catch {}
-  try { window.dispatchEvent(new CustomEvent("bleh:navigate", { detail: { tab: "wallet" } })); } catch {}
-  try {
-    if (typeof window !== "undefined") {
-      window.location.hash = "#wallet";
-      const u = new URL(window.location.href);
-      u.searchParams.set("tab", "wallet");
-      window.history.replaceState(null, "", u.toString());
-    }
-  } catch {}
-  try {
-    const el = document.querySelector('[data-tab="wallet"], [aria-controls="wallet"], #tab-wallet');
-    if (el) el.click();
-  } catch {}
-};
 
 
 

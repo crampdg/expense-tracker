@@ -121,7 +121,8 @@ export default function BudgetEditModal({
     };
     onClaim?.(payload);
     onClose?.();
-  }
+  };
+
 
 
   // --------- UI helpers ----------

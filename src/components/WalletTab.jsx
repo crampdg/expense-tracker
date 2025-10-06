@@ -258,6 +258,22 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txs]);
 
+  // Pick up a claim saved before Wallet mounted
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("bleh:pending-claim");
+      if (raw) {
+        localStorage.removeItem("bleh:pending-claim");
+        const tx = JSON.parse(raw);
+        if (tx) {
+          if (typeof onAddTransaction === "function") onAddTransaction(tx);
+          else handleAddTransaction(tx);
+        }
+      }
+    } catch {}
+  }, []);
+
+
   // ---- Period window ----
   const { startISO, endISO, daysLeft, periodDays, daysPassed } = useMemo(() => {
     let type = "Monthly";
