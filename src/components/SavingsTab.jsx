@@ -158,7 +158,7 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
     const isInvest = kind === "invest";
     const tx = {
       id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      date: new Date().toISOString().slice(0, 10),
+      date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
       type: isInvest ? "expense" : "inflow",
       category: goal.name, // no "Savings: " prefix
       amount: amt,

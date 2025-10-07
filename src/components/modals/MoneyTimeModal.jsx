@@ -28,7 +28,7 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
   const [form, setForm] = useState({
     type: 'expense',
     amount: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
     category: '',
     description: '',
   });
@@ -38,7 +38,7 @@ export default function MoneyTimeModal({ open, onClose, onSave, categories = [] 
       setForm({
         type: 'expense',
         amount: '',
-        date: new Date().toISOString().slice(0, 10),
+        date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
         category: '',
         description: '',
       });
