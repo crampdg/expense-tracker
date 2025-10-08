@@ -70,7 +70,8 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
       let changed = false;
       for (const name of namesFromTx) {
         if (name && !have.has(norm(name))) {
-          arr.push({ id: safeUid(), name, target: null, createdAt: Date.now() });
+          arr.push({ id: safeUid(), name, target: null, aprPct: 0, compounding: "annually", createdAt: Date.now() });
+
           changed = true;
         }
       }
@@ -146,7 +147,15 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
       return arr;
     });
   };
-  const addGoal = (g) => upsertGoal({ id: safeUid(), name: g.name || "New Goal", target: g.target ?? null, createdAt: Date.now() });
+  const addGoal = (g) => upsertGoal({
+    id: safeUid(),
+    name: g.name || "New Goal",
+    target: g.target ?? null,
+    aprPct: Number(g.aprPct) || 0,
+    compounding: g.compounding || "annually",
+    createdAt: Date.now()
+  });
+
   const removeGoal = (id) => setGoals((prev) => (Array.isArray(prev) ? prev.filter((g) => g.id !== id) : []));
 
   // --- tx emitters ---
@@ -249,6 +258,10 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
                 <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
                   {hasTarget ? `${pct}% of target` : "No target set"}
                 </div>
+                <div style={{ marginTop: 2, fontSize: 12, opacity: 0.6 }}>
+                  APR: {(g.aprPct ?? 0)}% • {g.compounding || "annually"}
+                </div>
+
               </button>
 
               {expandedId === g.id && (
@@ -287,9 +300,22 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
 
       <Modal open={modal.type === "edit" && !!activeGoal} title={`Edit ${activeGoal?.name || ""}`} onClose={() => setModal({ type: null, goalId: null })}>
         <EditGoalForm
-          initial={{ name: activeGoal?.name ?? "", target: activeGoal?.target ?? "" }}
+          initial={{
+            name: activeGoal?.name ?? "",
+            target: activeGoal?.target ?? "",
+            aprPct: activeGoal?.aprPct ?? 0,
+            compounding: activeGoal?.compounding || "annually"
+          }}
+
           onSubmit={(vals) => {
-            upsertGoal({ ...activeGoal, name: vals.name || "Untitled Goal", target: vals.target === "" ? null : clamp(vals.target) });
+            upsertGoal({
+              ...activeGoal,
+              name: vals.name || "Untitled Goal",
+              target: vals.target === "" ? null : clamp(vals.target),
+              aprPct: Number(vals.aprPct) || 0,
+              compounding: vals.compounding || "annually"
+            });
+
             setModal({ type: null, goalId: null });
           }}
         />
@@ -297,26 +323,49 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
 
       <Modal open={modal.type === "add"} title="Add Savings Goal" onClose={() => setModal({ type: null, goalId: null })}>
         <EditGoalForm
-          initial={{ name: "", target: "" }}
+          initial={{ name: "", target: "", aprPct: 0, compounding: "annually" }}
           onSubmit={(vals) => {
-            addGoal({ name: vals.name, target: vals.target === "" ? null : clamp(vals.target) });
+            addGoal({
+              name: vals.name,
+              target: vals.target === "" ? null : clamp(vals.target),
+              aprPct: Number(vals.aprPct) || 0,
+              compounding: vals.compounding || "annually"
+            });
+
             setModal({ type: null, goalId: null });
           }}
         />
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {DEFAULT_TEMPLATES.map((t) => ({
+              id: safeUid(),
+              name: t.name,
+              target: t.target, // null or 0 means “no target”
+              aprPct: 0,
+              compounding: "annually",
+              createdAt: Date.now(),
+            }))}
+          </div>
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {DEFAULT_TEMPLATES.map((t) => (
               <button
                 key={t.key}
-                onClick={() => { addGoal({ name: t.name, target: t.target ?? null }); setModal({ type: null, goalId: null }); }}
-                style={{ border: "1px dashed #d1d5db", background: "#f9fafb", padding: "8px 10px", borderRadius: 999, cursor: "pointer" }}
+                onClick={() => {
+                  addGoal({ name: t.name, target: t.target ?? null, aprPct: 0, compounding: "annually" });
+                  setModal({ type: null, goalId: null });
+                }}
+                style={pillBtn()}
               >
                 {t.name}
               </button>
             ))}
           </div>
         </div>
+
       </Modal>
 
       <Modal open={modal.type === "remove" && !!activeGoal} title="Remove goal?" onClose={() => setModal({ type: null, goalId: null })}>
@@ -361,18 +410,66 @@ function AmountForm({ cta, onSubmit }) {
 function EditGoalForm({ initial, onSubmit }) {
   const [name, setName] = useState(initial.name ?? "");
   const [target, setTarget] = useState(initial.target ?? "");
+  const [aprPct, setAprPct] = useState(initial.aprPct ?? 0);
+  const [compounding, setCompounding] = useState(initial.compounding || "annually");
+
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ name, target }); }}>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit({
+          name,
+          target,
+          aprPct,
+          compounding,
+        });
+      }}
+    >
       <label style={{ fontSize: 12, opacity: 0.8 }}>Name</label>
-      <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="e.g., Emergency Fund" />
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        style={inputStyle}
+        placeholder="e.g., Emergency Fund"
+      />
+
       <label style={{ fontSize: 12, opacity: 0.8 }}>Target (optional)</label>
-      <input inputMode="decimal" placeholder="e.g., 600" value={target} onChange={(e) => setTarget(e.target.value)} style={inputStyle} />
+      <input
+        inputMode="decimal"
+        placeholder="e.g., 600"
+        value={target}
+        onChange={(e) => setTarget(e.target.value)}
+        style={inputStyle}
+      />
+
+      <label style={{ fontSize: 12, opacity: 0.8 }}>APR (%)</label>
+      <input
+        inputMode="decimal"
+        placeholder="e.g., 4"
+        value={aprPct}
+        onChange={(e) => setAprPct(e.target.value)}
+        style={inputStyle}
+      />
+
+      <label style={{ fontSize: 12, opacity: 0.8 }}>Compounding</label>
+      <select
+        value={compounding}
+        onChange={(e) => setCompounding(e.target.value)}
+        style={{ ...inputStyle, appearance: "auto" }}
+      >
+        <option value="annually">Annually</option>
+        <option value="monthly">Monthly</option>
+        <option value="daily">Daily</option>
+        <option value="continuously">Continuously</option>
+      </select>
+
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button type="submit" style={primaryBtn()}>Save</button>
       </div>
     </form>
   );
 }
+
 
 function Modal({ open, title, onClose, children }) {
   if (!open) return null;

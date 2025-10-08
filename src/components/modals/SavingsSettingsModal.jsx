@@ -135,14 +135,15 @@ export default function SavingsSettingsModal({ open, onClose, value, onSave, onA
       bodyClass="max-h-[min(80vh,calc(100dvh-140px))] overflow-y-auto pr-1 pb-[calc(env(safe-area-inset-bottom)+88px)] overscroll-contain"
     >
       <div className="p-4 md:p-5 tap-safe">
-        <h3 className="text-lg font-semibold">Investments Settings</h3>
+        <h3 className="text-lg font-semibold">Savings & Backup</h3>
 
         <p className="mt-1 text-sm text-gray-600">
-          When you add an inflow, the app will automatically add a matching outflow to your Savings category.
+          Set APR and compounding per savings goal inside the Savings tab (defaults to 0%).
         </p>
 
+
         <div className="mt-4 space-y-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 hidden">
             <label className="text-sm text-gray-700">Investment annual interest (APR, decimal)</label>
             <input
               type="number"
