@@ -21,6 +21,13 @@ const DEFAULT_TEMPLATES = [
   { key: "gift", name: "Large Gift Savings", target: 0 },
 ];
 
+const DEFAULT_LOAN_TEMPLATES = [
+  { key: "creditline", name: "Line of Credit" },
+  { key: "student", name: "Student Loan" },
+  { key: "car", name: "Auto Loan" },
+];
+
+
 // clamp to positive number
 function clamp(n) {
   const x = Number(n);
@@ -41,6 +48,13 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
     }))
 
   );
+
+  // Persist loan *metadata* (name/apr/compounding). Balance comes from tx scan.
+  const [loans, setLoans] = usePersistentState(
+    "savings.loans.v1",
+    [] // start empty; we’ll also allow “Add Loan”
+  );
+
 
   const [expandedId, setExpandedId] = useState(null);
   const [modal, setModal] = useState({ type: null, goalId: null }); // 'invest'|'withdraw'|'edit'|'add'|'remove'
@@ -128,19 +142,71 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
     return m;
   }, [txs, goals]);
 
+  // --- derive per-loan balances from transactions (single source of truth) ---
+  const loanBalancesById = useMemo(() => {
+    const m = new Map();
+    const byName = new Map();
+
+    const norm = (s) =>
+      (s || "")
+        .toLowerCase()
+        .normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[’'`´]/g, "'")
+        .replace(/[-–—]/g, "-")
+        .replace(/[\s_]+/g, " ")
+        .trim();
+
+    for (const ln of Array.isArray(loans) ? loans : []) {
+      m.set(ln.id, 0);
+      byName.set(norm(ln.name), ln.id);
+    }
+
+    for (const t of txs) {
+      const amt = Math.max(0, Number(t.amount) || 0);
+      if (!amt) continue;
+
+      const meta = t?.meta || {};
+      let lid = meta.loanId;
+
+      if (!lid) {
+        const maybeName =
+          meta.loanName ||
+          (meta.budgetRoute && norm(meta.budgetRoute.parent) === "loans" ? meta.budgetRoute.category : null) ||
+          t.category;
+        const key = norm(maybeName);
+        lid = byName.get(key);
+      }
+
+      if (!lid || !m.has(lid)) continue;
+
+      // inflow tagged to loan = receive (↑debt); expense tagged to loan = repay (↓debt)
+      if (t.type === "inflow") m.set(lid, (m.get(lid) || 0) + amt);
+      else if (t.type === "expense") m.set(lid, Math.max(0, (m.get(lid) || 0) - amt));
+    }
+    return m;
+  }, [txs, loans]);
+
 
   const goalsList = Array.isArray(goals) ? goals : [];
   const activeGoal = goalsList.find((g) => g.id === modal.goalId) || null;
+  const loansList = Array.isArray(loans) ? loans : [];
+  const activeLoan = loansList.find((l) => l.id === modal.goalId) || null;
 
   const totals = useMemo(() => {
-    let saved = 0, targeted = 0;
+    let saved = 0, targeted = 0, debt = 0;
     for (const g of goalsList) {
       const bal = balancesById.get(g.id) || 0;
       saved += bal;
       if (g.target && g.target > 0) targeted += g.target;
     }
-    return { saved, targeted };
-  }, [goalsList, balancesById]);
+    for (const ln of Array.isArray(loans) ? loans : []) {
+      const bal = loanBalancesById.get(ln.id) || 0;
+      debt += bal;
+    }
+    return { saved, targeted, debt, net: saved - debt };
+  }, [goalsList, balancesById, loans, loanBalancesById]);
+
 
   // --- CRUD helpers ---
   const upsertGoal = (next) => {
@@ -151,6 +217,29 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
       return arr;
     });
   };
+
+  // Loans CRUD
+  const upsertLoan = (next) => {
+    setLoans((prev) => {
+      const arr = Array.isArray(prev) ? prev.slice() : [];
+      const i = arr.findIndex((l) => l.id === next.id);
+      if (i >= 0) arr[i] = next; else arr.unshift(next);
+      return arr;
+    });
+  };
+
+  const addLoan = (l) => upsertLoan({
+    id: safeUid(),
+    name: l.name || "New Loan",
+    aprPct: Number(l.aprPct) || 0,
+    compounding: l.compounding || "annually",
+    createdAt: Date.now(),
+  });
+
+  const removeLoan = (id) =>
+    setLoans((prev) => (Array.isArray(prev) ? prev.filter((l) => l.id !== id) : []));
+
+
   const addGoal = (g) => upsertGoal({
     id: safeUid(),
     name: g.name || "New Goal",
@@ -200,6 +289,42 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
     }
   }
 
+  function emitLoanTx(kind, loan, rawAmount, note) {
+    const amt = clamp(rawAmount);
+    if (!amt || !loan) return;
+
+    // inflow = receive loan (cash ↑, debt ↑), expense = repay loan (cash ↓, debt ↓)
+    const isReceive = kind === "receive";
+    const tx = {
+      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
+      type: isReceive ? "inflow" : "expense",
+      category: loan.name,
+      amount: amt,
+      note: note || (isReceive ? "Loan received" : "Loan repayment"),
+      meta: {
+        loan: true,
+        loanId: loan.id,
+        loanName: loan.name,
+        action: isReceive ? "receive" : "repay",
+        // route under a fixed parent "Loans" to keep budgets organized, mirroring Savings
+        budgetRoute: { bucket: isReceive ? "inflow" : "fixed", parent: "Loans", category: loan.name },
+      },
+    };
+
+    if (typeof onAddTransaction === "function") {
+      onAddTransaction(tx);
+    } else {
+      try {
+        const raw = localStorage.getItem("transactions");
+        const arr = raw ? JSON.parse(raw) : [];
+        arr.push(tx);
+        localStorage.setItem("transactions", JSON.stringify(arr));
+      } catch {}
+    }
+  }
+
+
   return (
     <div style={{ padding: 16, paddingBottom: 90 }}>
       {/* Header */}
@@ -218,10 +343,12 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
       </div>
 
       {/* Totals */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
         <Tile label="Total Saved" value={totals.saved} />
-        <Tile label="Total Targets" value={totals.targeted} />
+        <Tile label="Total Debt" value={totals.debt} />
+        <Tile label="Net (Saved − Debt)" value={totals.net} />
       </div>
+
 
       {/* Goals */}
       <div style={{ display: "grid", gap: 12 }}>
@@ -280,6 +407,50 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
           );
         })}
       </div>
+      
+      {/* Loans */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, marginBottom: 8 }}>
+        <h3 style={{ fontSize: 18, fontWeight: 800 }}>Loans</h3>
+        <button
+          onClick={() => setModal({ type: "loan.add", goalId: null })}
+          style={{ border: 0, borderRadius: 12, padding: "8px 12px", fontWeight: 700, cursor: "pointer", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "white" }}
+        >
+          + Add Loan
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gap: 12 }}>
+        {(Array.isArray(loans) ? loans : []).map((l) => {
+          const bal = loanBalancesById.get(l.id) || 0;
+          // No “target” for loans; show balance owed and APR/compounding
+          return (
+            <div key={l.id} style={{ background: "white", borderRadius: 16, padding: 14, boxShadow: "0 4px 16px rgba(0,0,0,.06)" }}>
+              <button
+                onClick={() => setExpandedId((id) => (id === l.id ? null : l.id))}
+                style={{ width: "100%", textAlign: "left", background: "transparent", border: 0, cursor: "pointer" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{l.name}</div>
+                  <div style={{ fontSize: 13, opacity: 0.85 }}>Owed: {money(bal)}</div>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
+                  APR: {(l.aprPct ?? 0)}% • {l.compounding || "annually"}
+                </div>
+              </button>
+
+              {expandedId === l.id && (
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  <button onClick={() => setModal({ type: "loan.receive", goalId: l.id })} style={pillBtn()} children="Receive" />
+                  <button onClick={() => setModal({ type: "loan.repay", goalId: l.id })} style={pillBtn()} children="Repay" />
+                  <button onClick={() => setModal({ type: "loan.edit", goalId: l.id })} style={pillBtn()} children="Rename / APR" />
+                  <button onClick={() => setModal({ type: "loan.remove", goalId: l.id })} style={pillBtnDanger()} children="Remove" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
 
       {/* MODALS */}
       <Modal open={modal.type === "invest" && !!activeGoal} title={`Invest into ${activeGoal?.name || ""}`} onClose={() => setModal({ type: null, goalId: null })}>
@@ -369,6 +540,88 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
           <button onClick={() => { removeGoal(activeGoal.id); setModal({ type: null, goalId: null }); }} style={dangerBtn()}>Remove</button>
         </div>
       </Modal>
+
+      {/* LOAN MODALS */}
+      <Modal open={modal.type === "loan.receive" && !!activeLoan} title={`Receive ${activeLoan?.name || ""}`} onClose={() => setModal({ type: null, goalId: null })}>
+        <AmountForm
+          cta="Receive"
+          onSubmit={(amt, note) => {
+            emitLoanTx("receive", activeLoan, amt, note);
+            setModal({ type: null, goalId: null });
+          }}
+        />
+      </Modal>
+
+      <Modal open={modal.type === "loan.repay" && !!activeLoan} title={`Repay ${activeLoan?.name || ""}`} onClose={() => setModal({ type: null, goalId: null })}>
+        <AmountForm
+          cta="Repay"
+          onSubmit={(amt, note) => {
+            emitLoanTx("repay", activeLoan, amt, note);
+            setModal({ type: null, goalId: null });
+          }}
+        />
+      </Modal>
+
+      <Modal open={modal.type === "loan.edit" && !!activeLoan} title={`Edit ${activeLoan?.name || ""}`} onClose={() => setModal({ type: null, goalId: null })}>
+        <EditLoanForm
+          initial={{
+            name: activeLoan?.name ?? "",
+            aprPct: activeLoan?.aprPct ?? 0,
+            compounding: activeLoan?.compounding || "annually",
+          }}
+          onSubmit={(vals) => {
+            upsertLoan({
+              ...activeLoan,
+              name: vals.name || "Untitled Loan",
+              aprPct: Number(vals.aprPct) || 0,
+              compounding: vals.compounding || "annually",
+            });
+            setModal({ type: null, goalId: null });
+          }}
+        />
+      </Modal>
+
+      <Modal open={modal.type === "loan.add"} title="Add Loan" onClose={() => setModal({ type: null, goalId: null })}>
+        <EditLoanForm
+          initial={{ name: "", aprPct: 0, compounding: "annually" }}
+          onSubmit={(vals) => {
+            addLoan({
+              name: vals.name,
+              aprPct: Number(vals.aprPct) || 0,
+              compounding: vals.compounding || "annually",
+            });
+            setModal({ type: null, goalId: null });
+          }}
+        />
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {DEFAULT_LOAN_TEMPLATES.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => {
+                  addLoan({ name: t.name, aprPct: 0, compounding: "annually" });
+                  setModal({ type: null, goalId: null });
+                }}
+                style={pillBtn()}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={modal.type === "loan.remove" && !!activeLoan} title="Remove loan?" onClose={() => setModal({ type: null, goalId: null })}>
+        <p style={{ fontSize: 14, margin: "8px 0 14px" }}>
+          This removes <strong>{activeLoan?.name}</strong> from your list. It doesn’t delete any past transactions linked to this loan.
+        </p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={() => setModal({ type: null, goalId: null })} style={ghostBtn()}>Cancel</button>
+          <button onClick={() => { removeLoan(activeLoan.id); setModal({ type: null, goalId: null }); }} style={dangerBtn()}>Remove</button>
+        </div>
+      </Modal>
+
     </div>
   );
 }
@@ -438,6 +691,54 @@ function EditGoalForm({ initial, onSubmit }) {
       <input
         inputMode="decimal"
         placeholder="e.g., 4"
+        value={aprPct}
+        onChange={(e) => setAprPct(e.target.value)}
+        style={inputStyle}
+      />
+
+      <label style={{ fontSize: 12, opacity: 0.8 }}>Compounding</label>
+      <select
+        value={compounding}
+        onChange={(e) => setCompounding(e.target.value)}
+        style={{ ...inputStyle, appearance: "auto" }}
+      >
+        <option value="annually">Annually</option>
+        <option value="monthly">Monthly</option>
+        <option value="daily">Daily</option>
+        <option value="continuously">Continuously</option>
+      </select>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button type="submit" style={primaryBtn()}>Save</button>
+      </div>
+    </form>
+  );
+}
+
+function EditLoanForm({ initial, onSubmit }) {
+  const [name, setName] = useState(initial.name ?? "");
+  const [aprPct, setAprPct] = useState(initial.aprPct ?? 0);
+  const [compounding, setCompounding] = useState(initial.compounding || "annually");
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit({ name, aprPct, compounding });
+      }}
+    >
+      <label style={{ fontSize: 12, opacity: 0.8 }}>Name</label>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        style={inputStyle}
+        placeholder="e.g., Student Loan"
+      />
+
+      <label style={{ fontSize: 12, opacity: 0.8 }}>APR (%)</label>
+      <input
+        inputMode="decimal"
+        placeholder="e.g., 6"
         value={aprPct}
         onChange={(e) => setAprPct(e.target.value)}
         style={inputStyle}
