@@ -335,19 +335,7 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
             setModal({ type: null, goalId: null });
           }}
         />
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {DEFAULT_TEMPLATES.map((t) => ({
-              id: safeUid(),
-              name: t.name,
-              target: t.target, // null or 0 means “no target”
-              aprPct: 0,
-              compounding: "annually",
-              createdAt: Date.now(),
-            }))}
-          </div>
-        </div>
+        
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Templates</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
