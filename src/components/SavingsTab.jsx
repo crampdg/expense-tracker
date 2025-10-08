@@ -101,11 +101,6 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
   const balancesById = useMemo(() => {
     const m = new Map();
     const byName = new Map();
-    for (const g of Array.isArray(goals) ? goals : []) {
-      m.set(g.id, 0);
-      byName.set(norm(g.name), g.id);
-
-    }
 
     const norm = (s) =>
       (s || "")
@@ -116,6 +111,11 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
         .replace(/[-–—]/g, "-")
         .replace(/[\s_]+/g, " ")
         .trim();
+
+    for (const g of Array.isArray(goals) ? goals : []) {
+      m.set(g.id, 0);
+      byName.set(norm(g.name), g.id);
+    }
 
     for (const t of txs) {
       const amt = Math.max(0, Number(t.amount) || 0);
@@ -141,6 +141,7 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
     }
     return m;
   }, [txs, goals]);
+
 
   // --- derive per-loan balances from transactions (single source of truth) ---
   const loanBalancesById = useMemo(() => {
