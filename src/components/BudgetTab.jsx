@@ -392,14 +392,11 @@ export default function BudgetTab({
 
       // ---------- LOANS: inflow (receive) ----------
       if (tType === "inflow" && route && route.bucket === "inflow" && norm(route.parent || "") === "loans") {
-        // Add as child under Loans parent
         const pIdx = ensureInflowParent("Loans");
         ensureInflowChild(pIdx, rawName);
-
-        // prevent also adding top-level inflow with same name
         continue;
       }
-
+      
 
       // ---------- SAVINGS: inflow (withdraw) ----------
       if (tType === "inflow" && route && route.bucket === "inflow" && norm(route.parent || "") === "savings") {
@@ -444,9 +441,6 @@ export default function BudgetTab({
 
   // ---- one-time dedupe: remove top-level outflows that duplicate any child name
   useEffect(() => {
-    const base = Array.isArray(budgets?.outflows) ? budgets.outflows : [];
-    if (!base.length) return;
-
     const norm = (s) =>
       (s || "")
         .toLowerCase()
@@ -457,26 +451,42 @@ export default function BudgetTab({
         .replace(/[\s_]+/g, " ")
         .trim();
 
-    // collect every child name
-    const childNames = new Set();
-    for (const p of base) {
-      for (const c of p?.children || []) childNames.add(norm(c.category));
-    }
+    const dedupeSection = (rows) => {
+      const base = Array.isArray(rows) ? rows : [];
+      if (!base.length) return base;
 
-    // if a top-level parent has NO children and its name matches a child, drop it
-    const filtered = base.filter((p) => {
-      const isChildName = childNames.has(norm(p.category));
-      const hasKids = (p?.children || []).length > 0;
-      return !(isChildName && !hasKids);
-    });
+      // collect every child name in this section
+      const childNames = new Set();
+      for (const p of base) {
+        for (const c of p?.children || []) childNames.add(norm(c.category));
+      }
 
-    // only write if changed
-    if (filtered.length !== base.length) {
-      setBudgets((prev) => ({ ...prev, outflows: filtered }));
+      // drop a top-level parent if:
+      //   1) it has no children AND
+      //   2) its name matches any child name in the same section
+      return base.filter((p) => {
+        const hasKids = (p?.children || []).length > 0;
+        const dupWithChild = childNames.has(norm(p.category));
+        return !(dupWithChild && !hasKids);
+      });
+    };
+
+    const inBase  = Array.isArray(budgets?.inflows)  ? budgets.inflows  : [];
+    const outBase = Array.isArray(budgets?.outflows) ? budgets.outflows : [];
+
+    const nextInflows  = dedupeSection(inBase);
+    const nextOutflows = dedupeSection(outBase);
+
+    if (nextInflows.length !== inBase.length || nextOutflows.length !== outBase.length) {
+      setBudgets((prev) => ({
+        ...prev,
+        ...(nextInflows.length  !== inBase.length  ? { inflows:  nextInflows  } : {}),
+        ...(nextOutflows.length !== outBase.length ? { outflows: nextOutflows } : {}),
+      }));
     }
-    // run once per budgets snapshot
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budgets?.outflows]);
+  }, [budgets?.inflows, budgets?.outflows]);
+
 
 
   // -------------------- collapse state (persisted) ---------------------------
