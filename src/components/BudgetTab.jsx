@@ -392,10 +392,14 @@ export default function BudgetTab({
 
       // ---------- LOANS: inflow (receive) ----------
       if (tType === "inflow" && route && route.bucket === "inflow" && norm(route.parent || "") === "loans") {
+        // Add as child under Loans parent
         const pIdx = ensureInflowParent("Loans");
         ensureInflowChild(pIdx, rawName);
+
+        // prevent also adding top-level inflow with same name
         continue;
       }
+
 
       // ---------- SAVINGS: inflow (withdraw) ----------
       if (tType === "inflow" && route && route.bucket === "inflow" && norm(route.parent || "") === "savings") {
