@@ -35,8 +35,11 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
       id: safeUid(),
       name: t.name,
       target: t.target, // null or 0 means “no target”
+      aprPct: 0,
+      compounding: "annually",
       createdAt: Date.now(),
     }))
+
   );
 
   const [expandedId, setExpandedId] = useState(null);
@@ -86,7 +89,8 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
     const byName = new Map();
     for (const g of Array.isArray(goals) ? goals : []) {
       m.set(g.id, 0);
-      byName.set((g.name || "").toLowerCase(), g.id);
+      byName.set(norm(g.name), g.id);
+
     }
 
     const norm = (s) =>
