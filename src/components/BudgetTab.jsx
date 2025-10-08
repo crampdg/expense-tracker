@@ -284,7 +284,7 @@ export default function BudgetTab({
     const txns = Array.isArray(transactions) ? transactions : [];
     if (!txns.length) return;
 
-    // Build a fast lookup of every existing outflow name (parents + children) across BOTH types
+    // ===== helpers for OUTFLOWS ================================================
     const existingOutflowNames = new Set();
     for (const p of (budgets?.outflows || [])) {
       if (p?.category) existingOutflowNames.add(norm(p.category));
@@ -293,74 +293,147 @@ export default function BudgetTab({
       }
     }
 
-    let changed = false;
+    let outflowsChanged = false;
     let nextOutflows = budgets?.outflows || [];
 
-    const ensureCloned = () => {
-      if (changed) return;
+    const ensureOutflowsCloned = () => {
+      if (outflowsChanged) return;
       nextOutflows = nextOutflows.map(p => ({
         ...p,
         children: Array.isArray(p.children) ? [...p.children] : []
       }));
-      changed = true;
+      outflowsChanged = true;
     };
 
     const ensureParentFixed = (name) => {
       const want = norm(name);
       let idx = nextOutflows.findIndex(r => norm(r.category) === want && (r.type || "variable") === "fixed");
       if (idx === -1) {
-        ensureCloned();
+        ensureOutflowsCloned();
         nextOutflows.push({ category: name, amount: 0, auto: true, children: [], type: "fixed" });
         idx = nextOutflows.length - 1;
       }
       return idx;
     };
 
+    // ===== helpers for INFLOWS =================================================
+    let inflowsChanged = false;
+    let nextInflows = budgets?.inflows || [];
+
+    const ensureInflowsCloned = () => { /* arrays are primitives; clone only when writing */ };
+
+    const ensureInflowParent = (name) => {
+      const want = norm(name);
+      let idx = nextInflows.findIndex(r => norm(r.category) === want);
+      if (idx === -1) {
+        inflowsChanged = true;
+        nextInflows = [...nextInflows, { category: name, amount: 0, auto: true, children: [] }];
+        idx = nextInflows.length - 1;
+      }
+      return idx;
+    };
+
+    const ensureInflowChild = (parentIdx, childName) => {
+      const kids = Array.isArray(nextInflows[parentIdx].children)
+        ? nextInflows[parentIdx].children
+        : (nextInflows[parentIdx].children = []);
+      const key = norm(childName);
+      const exists = kids.some(k => norm(k.category) === key);
+      if (!exists) {
+        inflowsChanged = true;
+        nextInflows[parentIdx].children = [...kids, { category: childName, amount: 0, auto: true, children: [] }];
+      }
+    };
+
+    // ===== main scan ===========================================================
     for (const t of txns) {
       const rawName = String(t.category || "").trim();
       if (!rawName) continue;
       const n = norm(rawName);
-
-      const rawType = String(t.type || "").toLowerCase();
-      const isOutflow = rawType ? rawType === "expense" : Number(t.amount) < 0;
-
       const route = t?.meta?.budgetRoute || null;
+      const tType = String(t.type || "").toLowerCase();
 
-      // Handle explicit routed Savings → create fixed parent + child
-      if (isOutflow && route && norm(route.parent || "") === "savings" && (route.bucket === "fixed")) {
-        const parentIdx = ensureParentFixed("Savings");
-        const children = Array.isArray(nextOutflows[parentIdx].children) ? nextOutflows[parentIdx].children : (nextOutflows[parentIdx].children = []);
-        const existsChild = children.some(c => norm(c.category) === n);
+      // ---------- LOANS: fixed outflow (repayment) ----------
+      if (tType === "expense" && route && route.bucket === "fixed" && norm(route.parent || "") === "loans") {
+        const parentIdx = ensureParentFixed("Loans");
+        const kids = Array.isArray(nextOutflows[parentIdx].children)
+          ? nextOutflows[parentIdx].children
+          : (nextOutflows[parentIdx].children = []);
+        const existsChild = kids.some(c => norm(c.category) === n);
         if (!existsChild) {
-          ensureCloned();
-          nextOutflows[parentIdx].children = [...children, { category: rawName, amount: 0, auto: true, children: [], type: "fixed" }];
+          ensureOutflowsCloned();
+          nextOutflows[parentIdx].children = [
+            ...kids,
+            { category: rawName, amount: 0, auto: true, children: [], type: "fixed" }
+          ];
         }
-        // mark so generic auto-adder won’t create top-level variable
+        // prevent generic auto-adder from making a top-level variable
         existingOutflowNames.add(n);
         continue;
       }
 
-      if (!isOutflow) continue;
+      // ---------- SAVINGS: fixed outflow (invest) ----------
+      if (tType === "expense" && route && route.bucket === "fixed" && norm(route.parent || "") === "savings") {
+        const parentIdx = ensureParentFixed("Savings");
+        const kids = Array.isArray(nextOutflows[parentIdx].children)
+          ? nextOutflows[parentIdx].children
+          : (nextOutflows[parentIdx].children = []);
+        const existsChild = kids.some(c => norm(c.category) === n);
+        if (!existsChild) {
+          ensureOutflowsCloned();
+          nextOutflows[parentIdx].children = [
+            ...kids,
+            { category: rawName, amount: 0, auto: true, children: [], type: "fixed" }
+          ];
+        }
+        existingOutflowNames.add(n);
+        continue;
+      }
 
-      // Respect other explicit routing
-      if (route && norm(route.category || "")) continue;
+      // ---------- LOANS: inflow (receive) ----------
+      if (tType === "inflow" && route && route.bucket === "inflow" && norm(route.parent || "") === "loans") {
+        const pIdx = ensureInflowParent("Loans");
+        ensureInflowChild(pIdx, rawName);
+        continue;
+      }
 
-      // Generic auto-add (top-level variable) for brand new names
-      if (existingOutflowNames.has(n)) continue;
-      const existsAnywhere = nextOutflows.some(
-        (p) => norm(p.category) === n || (p.children || []).some((c) => norm(c.category) === n)
-      );
-      if (existsAnywhere) continue;
+      // ---------- SAVINGS: inflow (withdraw) ----------
+      if (tType === "inflow" && route && route.bucket === "inflow" && norm(route.parent || "") === "savings") {
+        const pIdx = ensureInflowParent("Savings");
+        ensureInflowChild(pIdx, rawName);
+        continue;
+      }
 
-      ensureCloned();
-      nextOutflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
-      existingOutflowNames.add(n);
+
+      // ---------- generic outflow auto-add (unchanged) ----------
+      if (tType === "expense") {
+        // Respect other explicit routing (handled above)
+        if (route && norm(route.category || "")) continue;
+
+        // Brand-new outflow name? add as top-level variable
+        if (!existingOutflowNames.has(n)) {
+          const existsAnywhere = nextOutflows.some(
+            (p) => norm(p.category) === n || (p.children || []).some((c) => norm(c.category) === n)
+          );
+          if (!existsAnywhere) {
+            ensureOutflowsCloned();
+            nextOutflows.push({ category: rawName, amount: 0, auto: true, children: [], type: "variable" });
+            existingOutflowNames.add(n);
+          }
+        }
+      }
     }
 
-    if (changed) {
-      setBudgets(prev => ({ ...prev, outflows: nextOutflows }));
+    // commit if anything changed
+    if (outflowsChanged || inflowsChanged) {
+      setBudgets(prev => ({
+        ...prev,
+        ...(inflowsChanged ? { inflows: nextInflows } : {}),
+        ...(outflowsChanged ? { outflows: nextOutflows } : {}),
+      }));
     }
-  }, [transactions, budgets?.outflows, setBudgets]);
+  }, [transactions, budgets?.outflows, budgets?.inflows, setBudgets]);
+
 
 
 

@@ -270,7 +270,12 @@ export default function SavingsTab({ transactions, onAddTransaction }) {
         savingsGoalId: goal.id,
         savingsGoalName: goal.name,
         action: isInvest ? "invest" : "withdraw",
-        budgetRoute: { bucket: isInvest ? "fixed" : "inflow", parent: "Savings", category: goal.name },
+        budgetRoute: {
+          bucket: kind === "withdraw" ? "inflow" : "fixed",
+          parent: "Savings",
+          category: goal.name
+        },
+
       },
     };
 
