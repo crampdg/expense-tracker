@@ -715,6 +715,16 @@ export default function WalletTab({ budget, transactions, onAddTransaction }) {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      {/* Current date header */}
+      <div className="text-right text-sm text-emerald-900/80 font-medium">
+        {new Date().toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })}
+      </div>
+
       {/* HERO */}
       <div className="relative overflow-hidden rounded-3xl shadow-sm border border-emerald-200 bg-gradient-to-b from-emerald-300 to-emerald-500">
         <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
